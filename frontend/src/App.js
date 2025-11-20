@@ -33,22 +33,31 @@ function AppContent() {
   const [peers, setPeers] = useState([]);
   const [stats, setStats] = useState(null);
 
-  // Form data states
+  // Form data
   const [groupName, setGroupName] = useState("");
   const [groupDesc, setGroupDesc] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
   const [tags, setTags] = useState("");
 
-  // Profile edit
+  // Profile
   const [editProfile, setEditProfile] = useState(false);
   const [editUsername, setEditUsername] = useState("");
   const [editEmail, setEditEmail] = useState("");
 
+  /** ======================
+   *  AUTH CHECK + USER DATA
+   ======================== */
   useEffect(() => {
     if (token) {
       API.defaults.headers.common["Authorization"] = `Bearer ${token}`;
       fetchUser();
+    } else {
+      const savedToken = localStorage.getItem("token");
+      if (savedToken) {
+        setToken(savedToken);
+        API.defaults.headers.common["Authorization"] = `Bearer ${savedToken}`;
+      }
     }
   }, [token]);
 
@@ -63,17 +72,24 @@ function AppContent() {
     }
   }, [user, selectedGroup]);
 
-  // Update breadcrumbs
+  /** ======================
+   *  BREADCRUMBS
+   ======================== */
   useEffect(() => {
     const crumbs = ["Home"];
+
     if (view === "dashboard") crumbs.push("Dashboard");
     else if (view === "groups") crumbs.push("Groups");
     else if (view === "files" && selectedGroup) crumbs.push("Groups", selectedGroup.name);
     else if (view === "peers") crumbs.push("Network", "Peers");
     else if (view === "profile") crumbs.push("Profile");
+
     setBreadcrumbs(crumbs);
   }, [view, selectedGroup]);
 
+  /** ======================
+   *  HELPERS
+   ======================== */
   const notify = (msg, type = "success") => {
     setNotification({ msg, type });
     setTimeout(() => setNotification(null), 4000);
@@ -89,10 +105,7 @@ function AppContent() {
       fetchPeers();
       fetchStats();
     } catch (err) {
-      console.error(err);
-      if (err.response?.status === 401) {
-        logout();
-      }
+      if (err.response?.status === 401) logout();
     }
   };
 
@@ -132,6 +145,9 @@ function AppContent() {
     }
   };
 
+  /** ======================
+   *  AUTH HANDLING
+   ======================== */
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -140,17 +156,18 @@ function AppContent() {
       const data = isLogin
         ? { email: loginEmail, password: loginPassword }
         : { username: regUsername, email: regEmail, password: regPassword };
+
       const res = await API.post(endpoint, data);
+
       setToken(res.data.token);
       localStorage.setItem("token", res.data.token);
       setUser(res.data.user);
-      notify(`Welcome ${isLogin ? "back" : ""}!`);
       setView("dashboard");
+      notify("Welcome!");
     } catch (err) {
       notify(err.response?.data?.error || "Authentication failed", "error");
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   const logout = () => {
@@ -158,27 +175,34 @@ function AppContent() {
     setUser(null);
     localStorage.removeItem("token");
     delete API.defaults.headers.common["Authorization"];
-    notify("Logged out successfully");
+    notify("Logged out");
   };
 
+  /** ======================
+   *  PROFILE UPDATE
+   ======================== */
   const updateProfile = async (e) => {
     e.preventDefault();
     setLoading(true);
+
     try {
       await API.patch("/auth/preferences", {
         username: editUsername,
         email: editEmail,
       });
+
       await fetchUser();
+      notify("Profile updated!");
       setEditProfile(false);
-      notify("Profile updated successfully!");
     } catch (err) {
-      notify(err.response?.data?.error || "Update failed", "error");
-    } finally {
-      setLoading(false);
+      notify("Update failed", "error");
     }
+    setLoading(false);
   };
 
+  /** ======================
+   *  GROUPS
+   ======================== */
   const createGroup = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -187,15 +211,14 @@ function AppContent() {
         name: groupName,
         description: groupDesc,
       });
-      notify(`Group created! Code: ${res.data.group.inviteCode}`);
+      notify(`Group Created! Code: ${res.data.group.inviteCode}`);
       setGroupName("");
       setGroupDesc("");
       fetchGroups();
     } catch (err) {
-      notify(err.response?.data?.error || "Failed to create group", "error");
-    } finally {
-      setLoading(false);
+      notify("Failed to create group", "error");
     }
+    setLoading(false);
   };
 
   const joinGroup = async (e) => {
@@ -203,14 +226,13 @@ function AppContent() {
     setLoading(true);
     try {
       await API.post("/groups/join", { inviteCode });
-      notify("Joined group successfully!");
+      notify("Joined group!");
       setInviteCode("");
       fetchGroups();
     } catch (err) {
-      notify(err.response?.data?.error || "Failed to join group", "error");
-    } finally {
-      setLoading(false);
+      notify("Invalid invite code", "error");
     }
+    setLoading(false);
   };
 
   const selectGroup = (group) => {
@@ -219,80 +241,79 @@ function AppContent() {
     fetchFiles(group.id);
   };
 
+  /** ======================
+   *  FILE HANDLING
+   ======================== */
   const uploadFileToGroup = async (e) => {
     e.preventDefault();
-    if (!uploadFile || !selectedGroup) {
-      notify("Please select a file and group", "error");
-      return;
-    }
+    if (!uploadFile) return notify("Select a file", "error");
+
     setLoading(true);
     const formData = new FormData();
     formData.append("file", uploadFile);
     formData.append("groupId", selectedGroup.id);
     formData.append("tags", JSON.stringify(tags.split(",").map((t) => t.trim())));
+
     try {
       await API.post("/files/upload", formData);
-      notify("File uploaded & encrypted!");
+      notify("File uploaded!");
       setUploadFile(null);
       setTags("");
       fetchFiles(selectedGroup.id);
       fetchStats();
     } catch (err) {
-      notify(err.response?.data?.error || "Upload failed", "error");
-    } finally {
-      setLoading(false);
+      notify("Upload failed", "error");
     }
+    setLoading(false);
   };
 
-  const downloadFile = async (fileId, filename) => {
+  const downloadFile = async (id, name) => {
     try {
-      notify("Decrypting & downloading...");
-      const res = await API.get(`/files/download/${fileId}`, { responseType: "blob" });
+      const res = await API.get(`/files/download/${id}`, { responseType: "blob" });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
+      link.download = name;
       link.click();
-      link.remove();
-      notify("Download complete!");
+      notify("Downloaded!");
     } catch (err) {
       notify("Download failed", "error");
     }
   };
 
-  const deleteFile = async (fileId) => {
+  const deleteFile = async (id) => {
     if (!window.confirm("Delete this file?")) return;
+
     try {
-      await API.delete(`/files/${fileId}`);
-      notify("File deleted!");
+      await API.delete(`/files/${id}`);
+      notify("File deleted");
       fetchFiles(selectedGroup.id);
       fetchStats();
-    } catch (err) {
+    } catch {
       notify("Delete failed", "error");
     }
   };
 
-  const formatSize = (bytes) => {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
-  };
-
+  /** ======================
+   *  FORMAT HELPERS
+   ======================== */
+  const formatSize = (b) => (b < 1024 ? b + "B" : (b / 1024).toFixed(1) + "KB");
   const formatDate = (d) => new Date(d).toLocaleString();
 
   const storagePercent = stats
     ? ((stats.storageUsed / stats.storageLimit) * 100).toFixed(1)
     : 0;
 
-  // Auth Screen
+  /** ======================
+   *  AUTH SCREEN
+   ======================== */
   if (!token || !user) {
     return (
       <div className="auth-container">
         <div className="auth-card">
           <h1>🌐 DeCloud</h1>
-          <p>Decentralized Cloud Storage with End-to-End Encryption</p>
+          <p>Decentralized Cloud with End-to-End Encryption</p>
+
           <div className="auth-switch">
             <button className={isLogin ? "active" : ""} onClick={() => setIsLogin(true)}>
               Login
@@ -301,6 +322,7 @@ function AppContent() {
               Register
             </button>
           </div>
+
           <form onSubmit={handleAuth}>
             {!isLogin && (
               <input
@@ -311,15 +333,15 @@ function AppContent() {
                 required
               />
             )}
+
             <input
               type="email"
               placeholder="Email"
               value={isLogin ? loginEmail : regEmail}
-              onChange={(e) =>
-                isLogin ? setLoginEmail(e.target.value) : setRegEmail(e.target.value)
-              }
+              onChange={(e) => (isLogin ? setLoginEmail(e.target.value) : setRegEmail(e.target.value))}
               required
             />
+
             <input
               type="password"
               placeholder="Password"
@@ -329,17 +351,21 @@ function AppContent() {
               }
               required
             />
+
             <button type="submit" disabled={loading}>
               {loading ? "Processing..." : isLogin ? "Login" : "Create Account"}
             </button>
           </form>
         </div>
+
         {notification && <div className={`notification ${notification.type}`}>{notification.msg}</div>}
       </div>
     );
   }
 
-  // Main App
+  /** ======================
+   *  MAIN APP UI
+   ======================== */
   return (
     <div className="app-wrapper">
       <Navbar
@@ -352,109 +378,111 @@ function AppContent() {
       />
 
       <div className="app-body">
+        {/* SIDEBAR */}
         <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
           <div className="sidebar-title">NAVIGATION</div>
-          <button
-            className={view === "dashboard" ? "active" : ""}
-            onClick={() => setView("dashboard")}
-          >
-            <span>📊</span> Dashboard
+
+          <button className={view === "dashboard" ? "active" : ""} onClick={() => setView("dashboard")}>
+            📊 Dashboard
           </button>
-          <button
-            className={view === "groups" ? "active" : ""}
-            onClick={() => setView("groups")}
-          >
-            <span>👥</span> Groups ({groups.length})
+
+          <button className={view === "groups" ? "active" : ""} onClick={() => setView("groups")}>
+            👥 Groups ({groups.length})
           </button>
-          <button
-            className={view === "peers" ? "active" : ""}
-            onClick={() => setView("peers")}
-          >
-            <span>💻</span> Peers ({peers.length})
+
+          <button className={view === "peers" ? "active" : ""} onClick={() => setView("peers")}>
+            💻 Peers ({peers.length})
           </button>
+
           {selectedGroup && (
             <>
-              <div className="sidebar-title" style={{ marginTop: "20px" }}>
+              <div className="sidebar-title" style={{ marginTop: 20 }}>
                 CURRENT GROUP
               </div>
+
               <button className={view === "files" ? "active" : ""} onClick={() => setView("files")}>
-                <span>📁</span> {selectedGroup.name}
+                📁 {selectedGroup.name}
               </button>
             </>
           )}
         </aside>
 
+        {/* MAIN CONTENT */}
         <main className="main-content">
-          {/* Breadcrumbs */}
+          {/* BREADCRUMBS */}
           <div className="breadcrumbs">
-            {breadcrumbs.map((crumb, i) => (
-              <span key={i}>
-                {crumb}
-                {i < breadcrumbs.length - 1 && " / "}
-              </span>
-            ))}
+            {breadcrumbs.map((c, i) => {
+              const last = i === breadcrumbs.length - 1;
+              return (
+                <span key={i}>
+                  {last ? (
+                    <span className="breadcrumb-current">{c}</span>
+                  ) : (
+                    <button
+                      className="breadcrumb-link"
+                      onClick={() => {
+                        if (c === "Home" || c === "Dashboard") setView("dashboard");
+                        if (c === "Groups") setView("groups");
+                        if (c === "Network") setView("peers");
+                        if (c === "Profile") setView("profile");
+                      }}
+                    >
+                      {c}
+                    </button>
+                  )}
+                  {i < breadcrumbs.length - 1 && " / "}
+                </span>
+              );
+            })}
           </div>
 
-          {/* Dashboard */}
+          {/* DASHBOARD */}
           {view === "dashboard" && stats && (
-            <div>
+            <>
               <h1 className="page-title">Dashboard</h1>
-              <p className="muted">Overview of your storage and activity</p>
+              <p className="muted">Overview of your usage</p>
 
-              {/* Storage Bar */}
+              {/* STORAGE BAR */}
               <div className="storage-bar-container">
                 <div className="storage-info">
-                  <span className="storage-label">Storage Used</span>
-                  <span className="storage-values">
-                    {formatSize(stats.storageUsed)} / {formatSize(stats.storageLimit)}
-                  </span>
+                  <span>Storage Used</span>
+                  <span>{formatSize(stats.storageUsed)} / {formatSize(stats.storageLimit)}</span>
                 </div>
+
                 <div className="storage-bar">
                   <div
                     className="storage-fill"
-                    style={{
-                      width: `${storagePercent}%`,
-                      background:
-                        storagePercent > 90
-                          ? "linear-gradient(90deg, #ef4444, #dc2626)"
-                          : storagePercent > 70
-                          ? "linear-gradient(90deg, #f59e0b, #d97706)"
-                          : "linear-gradient(90deg, #10b981, #059669)",
-                    }}
+                    style={{ width: `${storagePercent}%` }}
                   />
                 </div>
+
                 <div className="storage-percent">{storagePercent}% Used</div>
               </div>
 
-              {/* Stats Grid */}
+              {/* STATS GRID */}
               <div className="stats-grid">
-                <div className="stat-box">
-                  <h3>Total Groups</h3>
-                  <p>{stats.groupCount}</p>
-                </div>
-                <div className="stat-box">
-                  <h3>Total Files</h3>
-                  <p>{stats.fileCount}</p>
-                </div>
-                <div className="stat-box">
-                  <h3>Peers Online</h3>
-                  <p>{stats.peersOnline}</p>
-                </div>
+                <div className="stat-box"><h3>Groups</h3><p>{stats.groupCount}</p></div>
+                <div className="stat-box"><h3>Files</h3><p>{stats.fileCount}</p></div>
+                <div className="stat-box"><h3>Peers Online</h3><p>{stats.peersOnline}</p></div>
                 <div className="stat-box">
                   <h3>Recent Transfers</h3>
                   <p>{stats.recentTransfers?.length || 0}</p>
                 </div>
               </div>
 
-              {/* Recent Activity */}
-              {stats.recentTransfers && stats.recentTransfers.length > 0 && (
-                <div className="card" style={{ marginTop: "32px" }}>
-                  <h3 style={{ marginBottom: "16px" }}>Recent Activity</h3>
+              {/* RECENT ACTIVITY */}
+              {stats.recentTransfers?.length > 0 && (
+                <div className="card">
+                  <h3>Recent Activity</h3>
                   <div className="activity-list">
                     {stats.recentTransfers.slice(0, 5).map((t, i) => (
                       <div key={i} className="activity-item">
                         <span className="activity-icon">
-                          {t.action === "upload" ? "📤" : t.action === "download" ? "📥" : "🗑️"}
+                          {t.action === "upload"
+                            ? "📤"
+                            : t.action === "download"
+                            ? "📥"
+                            : "🗑️"}
                         </span>
                         <div className="activity-info">
                           <div className="activity-name">
@@ -469,21 +497,19 @@ function AppContent() {
                   </div>
                 </div>
               )}
-            </div>
+            </>
           )}
 
-          {/* Groups */}
+          {/* GROUPS */}
           {view === "groups" && (
-            <div>
-              <div className="groups-header">
-                <h1 className="page-title">Groups</h1>
-                <p className="muted">Create or join groups to share files securely</p>
-              </div>
+            <>
+              <h1 className="page-title">Groups</h1>
+              <p className="muted">Create or join a group</p>
 
               <div className="groups-grid">
-                {/* Create Group */}
-                <div className="card create-card glass-border">
-                  <h3>➕ Create New Group</h3>
+                {/* CREATE GROUP */}
+                <div className="card">
+                  <h3>Create Group</h3>
                   <form onSubmit={createGroup}>
                     <input
                       type="text"
@@ -494,122 +520,95 @@ function AppContent() {
                     />
                     <input
                       type="text"
-                      placeholder="Description (optional)"
+                      placeholder="Description"
                       value={groupDesc}
                       onChange={(e) => setGroupDesc(e.target.value)}
                     />
-                    <button type="submit" disabled={loading} className="glass-btn">
-                      {loading ? "Creating..." : "Create Group"}
-                    </button>
+                    <button type="submit" disabled={loading}>Create</button>
                   </form>
                 </div>
 
-                {/* Join Group */}
-                <div className="card join-card glass-border">
-                  <h3>🔗 Join Group</h3>
+                {/* JOIN GROUP */}
+                <div className="card">
+                  <h3>Join Group</h3>
                   <form onSubmit={joinGroup}>
                     <input
                       type="text"
-                      placeholder="Enter Invite Code"
+                      placeholder="Invite Code"
                       value={inviteCode}
                       onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
                       required
                       maxLength={8}
                     />
-                    <button type="submit" disabled={loading} className="glass-btn">
-                      {loading ? "Joining..." : "Join Group"}
-                    </button>
+                    <button type="submit" disabled={loading}>Join</button>
                   </form>
                 </div>
               </div>
 
-              {/* Groups List */}
+              {/* GROUP LIST */}
               <div className="groups-list">
-                <h3>Your Groups</h3>
                 {groups.length === 0 ? (
-                  <p className="empty">No groups yet. Create or join one!</p>
+                  <p className="empty">No groups yet.</p>
                 ) : (
-                  <div className="list">
-                    {groups.map((g) => (
-                      <div key={g.id} className="group-item glass-border">
-                        <div>
-                          <strong>{g.name}</strong>
-                          <div className="small">{g.description || "No description"}</div>
-                          <div className="invite">
-                            Invite Code: <code>{g.inviteCode}</code>
-                          </div>
-                        </div>
-                        <div className="actions">
-                          <span className="small">{g.memberCount} members</span>
-                          <button onClick={() => selectGroup(g)} className="glass-btn">
-                            Open →
-                          </button>
-                        </div>
+                  groups.map((g) => (
+                    <div key={g.id} className="group-item">
+                      <div>
+                        <strong>{g.name}</strong>
+                        <div className="small">{g.description || "No description"}</div>
+                        <div>Invite Code: <code>{g.inviteCode}</code></div>
                       </div>
-                    ))}
-                  </div>
+                      <button onClick={() => selectGroup(g)}>Open →</button>
+                    </div>
+                  ))
                 )}
               </div>
-            </div>
+            </>
           )}
 
-          {/* Files */}
+          {/* FILES */}
           {view === "files" && selectedGroup && (
-            <div>
-              <div className="files-header">
-                <h2>📁 {selectedGroup.name}</h2>
-                <p className="muted">
-                  🔒 All files encrypted • {selectedGroup.memberCount} members
-                </p>
-              </div>
+            <>
+              <h2>📁 {selectedGroup.name}</h2>
+              <p className="muted">{selectedGroup.memberCount} members</p>
 
-              {/* Upload */}
-              <div className="upload-row glass-border">
-                <form onSubmit={uploadFileToGroup} className="upload-form">
-                  <input
-                    type="file"
-                    onChange={(e) => setUploadFile(e.target.files[0])}
-                    required
-                  />
+              {/* UPLOAD */}
+              <div className="upload-row">
+                <form onSubmit={uploadFileToGroup}>
+                  <input type="file" onChange={(e) => setUploadFile(e.target.files[0])} required />
                   <input
                     type="text"
-                    placeholder="Tags (optional)"
+                    placeholder="Tags"
                     value={tags}
                     onChange={(e) => setTags(e.target.value)}
                   />
-                  <button type="submit" disabled={loading || !uploadFile} className="glass-btn">
-                    {loading ? "Uploading..." : "📤 Upload & Encrypt"}
+                  <button type="submit" disabled={loading || !uploadFile}>
+                    Upload
                   </button>
                 </form>
               </div>
 
-              {/* Files List */}
+              {/* FILE LIST */}
               <div className="files-list">
                 {files.length === 0 ? (
-                  <p className="empty">No files in this group yet</p>
+                  <p className="empty">No files yet.</p>
                 ) : (
                   files.map((f) => (
-                    <div key={f._id} className="file-item glass-border">
-                      <div className="file-main">
-                        <div className="file-name">📄 {f.originalName}</div>
+                    <div key={f._id} className="file-item">
+                      <div>
+                        <div>📄 {f.originalName}</div>
                         <div className="file-meta">
-                          {formatSize(f.size)} • {f.owner?.username} •{" "}
-                          {formatDate(f.uploadedAt)}
+                          {formatSize(f.size)} • {f.owner?.username} • {formatDate(f.uploadedAt)}
                         </div>
                       </div>
+
                       <div className="file-actions">
-                        <button
-                          onClick={() => downloadFile(f._id, f.originalName)}
-                          className="glass-btn"
-                        >
-                          📥 Download
+                        <button onClick={() => downloadFile(f._id, f.originalName)}>
+                          Download
                         </button>
+
                         {f.owner?._id === user.id && (
-                          <button
-                            onClick={() => deleteFile(f._id)}
-                            className="glass-btn danger"
-                          >
-                            🗑️
+                          <button className="danger" onClick={() => deleteFile(f._id)}>
+                            Delete
                           </button>
                         )}
                       </div>
@@ -617,117 +616,94 @@ function AppContent() {
                   ))
                 )}
               </div>
-            </div>
+            </>
           )}
 
-          {/* Peers */}
+          {/* PEERS */}
           {view === "peers" && (
-            <div>
-              <div className="peers-header">
-                <h1 className="page-title">Network Peers</h1>
-                <p className="muted">Devices connected on the same network</p>
-                <button onClick={fetchPeers} className="refresh-btn glass-btn">
-                  🔄 Refresh
-                </button>
-              </div>
+            <>
+              <h1 className="page-title">Network Peers</h1>
+              <p className="muted">Devices on same network</p>
 
-              {/* Connection Instructions */}
-              <div className="card glass-border" style={{ marginBottom: "24px" }}>
+              <button onClick={fetchPeers} className="refresh-btn">🔄 Refresh</button>
+
+              {/* SIMPLE CONNECTION INSTRUCTIONS (OPTION B) */}
+              <div className="card" style={{ marginTop: "20px" }}>
                 <h3>🌐 How to Connect Devices</h3>
                 <ol style={{ marginLeft: "20px", marginTop: "12px", lineHeight: "1.8" }}>
-                  <li>Make sure all devices are on the <strong>same WiFi network</strong></li>
-                  <li>Run the app on each device (start backend & frontend)</li>
-                  <li>Wait 5-10 seconds for automatic peer discovery</li>
+                  <li>Ensure all devices are on the <strong>same WiFi network</strong></li>
+                  <li>Run backend & frontend on each device</li>
+                  <li>Wait 5–10 seconds for automatic peer discovery</li>
                   <li>Peers will appear below automatically</li>
-                  <li>Create a group and share the invite code with peers</li>
-                  <li>All group members can now share files securely!</li>
+                  <li>Share the group invite code to collaborate</li>
                 </ol>
               </div>
 
               <div className="peers-grid">
                 {peers.length === 0 ? (
-                  <div className="card glass-border">
-                    <p className="empty">
-                      🔍 No peers discovered yet.
-                      <br />
-                      Make sure other devices are running on the same WiFi.
-                    </p>
+                  <div className="card">
+                    <p className="empty">No peers detected.</p>
                   </div>
                 ) : (
                   peers.map((p, i) => (
-                    <div key={i} className="peer-card glass-border">
+                    <div key={i} className="peer-card">
                       <div className="peer-name">💻 {p.name}</div>
                       <div className="peer-ip">
                         {p.ip}:{p.port}
                       </div>
-                      <div className="peer-meta">
-                        Last seen: {formatDate(p.lastSeen)}
-                      </div>
-                      <div className="peer-actions">
-                        <button className="glass-btn">🔗 Connect</button>
-                      </div>
+                      <div className="peer-meta">Last seen: {formatDate(p.lastSeen)}</div>
+                      <button className="glass-btn">Connect</button>
                     </div>
                   ))
                 )}
               </div>
-            </div>
+            </>
           )}
 
-          {/* Profile */}
+          {/* PROFILE */}
           {view === "profile" && (
-            <div>
-              <h1 className="page-title">Profile Settings</h1>
-              <p className="muted">Manage your account information</p>
+            <>
+              <h1 className="page-title">Profile</h1>
 
-              <div className="card glass-border" style={{ maxWidth: "600px" }}>
+              <div className="card" style={{ maxWidth: 500 }}>
                 {!editProfile ? (
-                  <div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <strong>Username:</strong> {user.username}
+                  <>
+                    <div><strong>Username:</strong> {user.username}</div>
+                    <div><strong>Email:</strong> {user.email}</div>
+                    <div>
+                      <strong>Storage:</strong> {formatSize(user.storageUsed)} / {formatSize(user.storageLimit)}
                     </div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <strong>Email:</strong> {user.email}
-                    </div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <strong>Storage Used:</strong> {formatSize(user.storageUsed)} /{" "}
-                      {formatSize(user.storageLimit)}
-                    </div>
-                    <button onClick={() => setEditProfile(true)} className="glass-btn">
-                      ✏️ Edit Profile
-                    </button>
-                  </div>
+
+                    <button onClick={() => setEditProfile(true)}>Edit</button>
+                  </>
                 ) : (
                   <form onSubmit={updateProfile}>
                     <input
                       type="text"
-                      placeholder="Username"
                       value={editUsername}
                       onChange={(e) => setEditUsername(e.target.value)}
                       required
                     />
+
                     <input
                       type="email"
-                      placeholder="Email"
                       value={editEmail}
                       onChange={(e) => setEditEmail(e.target.value)}
                       required
                     />
-                    <div style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
-                      <button type="submit" disabled={loading} className="glass-btn">
-                        {loading ? "Saving..." : "💾 Save Changes"}
+
+                    <div className="row">
+                      <button type="submit" disabled={loading}>
+                        Save
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditProfile(false)}
-                        className="glass-btn"
-                      >
+                      <button type="button" onClick={() => setEditProfile(false)}>
                         Cancel
                       </button>
                     </div>
                   </form>
                 )}
               </div>
-            </div>
+            </>
           )}
         </main>
       </div>
@@ -742,6 +718,7 @@ function AppContent() {
   );
 }
 
+/** WRAPPER */
 export default function App() {
   return (
     <ThemeProvider>

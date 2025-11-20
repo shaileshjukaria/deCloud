@@ -233,8 +233,16 @@ app.post("/api/auth/register", async (req, res) => {
         const user = await User.create({ username, email, password: hashed });
 
         const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-
-        res.json({ token, user });
+res.json({ 
+  token, 
+  user: {
+    id: user._id.toString(),
+    username: user.username,
+    email: user.email,
+    storageUsed: user.storageUsed,
+    storageLimit: user.storageLimit
+  }
+});
     } catch (err) {
         console.error("Register error:", err);
         if (err.code === 11000) return res.status(400).json({ error: "Duplicate key" });
@@ -263,14 +271,26 @@ app.post("/api/auth/login", async (req, res) => {
 
 // Return current user info
 app.get("/api/auth/me", auth, async (req, res) => {
-    try {
-        const user = await User.findById(req.user.userId).select("username email storageUsed storageLimit theme createdAt");
-        if (!user) return res.status(404).json({ error: "User not found" });
-        res.json(user);
-    } catch (err) {
-        console.error("/auth/me error:", err);
-        res.status(500).json({ error: "Failed to fetch user" });
-    }
+  try {
+    const user = await User.findById(req.user.userId).select("username email storageUsed storageLimit theme createdAt");
+    if (!user) return res.status(404).json({ error: "User not found" });
+    
+    // Return user with id field (frontend expects it)
+    const userData = {
+      id: user._id.toString(),
+      username: user.username,
+      email: user.email,
+      storageUsed: user.storageUsed,
+      storageLimit: user.storageLimit,
+      theme: user.theme,
+      createdAt: user.createdAt
+    };
+    
+    res.json(userData);
+  } catch (err) {
+    console.error("/auth/me error:", err);
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
 });
 
 // Global error handler to avoid crashing on unhandled errors
@@ -298,29 +318,230 @@ app.post("/api/groups/create", auth, async (req, res) => {
 });
 
 app.get("/api/groups", auth, async (req, res) => {
-    const groups = await Group.find({ "members.userId": req.user.userId });
-    res.json(groups);
+  try {
+    const groups = await Group.find({ "members.userId": req.user.userId })
+      .populate("creator", "username")
+      .sort({ createdAt: -1 });
+    
+    // Add member count to each group
+    const groupsWithCount = groups.map(g => ({
+      id: g._id.toString(),
+      _id: g._id,
+      name: g.name,
+      description: g.description,
+      inviteCode: g.inviteCode,
+      memberCount: g.members.length,
+      createdAt: g.createdAt
+    }));
+    
+    res.json(groupsWithCount);
+  } catch (err) {
+    console.error("Get groups error:", err);
+    res.status(500).json({ error: "Failed to fetch groups" });
+  }
 });
 
 // ====================== FILE ROUTES ======================
 app.post("/api/files/upload", auth, upload.single("file"), async (req, res) => {
-    const { groupId } = req.body;
+  try {
+    const { groupId, tags } = req.body;
 
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+app.get("/api/files/download/:id", auth, async (req, res) => {
+  try {
+    const file = await File.findById(req.params.id).populate("group");
+    if (!file) return res.status(404).json({ error: "File not found" });
+
+    // Check if user is member of group
+    const group = await Group.findById(file.group._id);
+    const isMember = group.members.some(m => m.userId.toString() === req.user.userId);
+    if (!isMember) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+
+    const filePath = path.join(__dirname, "uploads", file.filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found on disk" });
+    }
+
+    // Read encrypted file
+    const encryptedData = fs.readFileSync(filePath);
+
+    // Decrypt
+    const decipher = crypto.createDecipheriv(
+      ENCRYPTION_ALGORITHM,
+      Buffer.from(file.group.encryptionKey, "hex"),
+      Buffer.from(file.encryptionIV, "hex")
+    );
+    decipher.setAuthTag(Buffer.from(file.encryptionAuthTag, "hex"));
+
+    const decrypted = Buffer.concat([
+      decipher.update(encryptedData),
+      decipher.final()
+    ]);
+
+    // Update download count
+    await File.findByIdAndUpdate(file._id, { $inc: { downloads: 1 } });
+
+    // Log transfer
+    await TransferLog.create({
+      fileId: file._id,
+      action: "download",
+      userId: req.user.userId,
+      groupId: file.group._id
+    });
+
+    res.setHeader("Content-Type", file.mimeType);
+    res.setHeader("Content-Disposition", `attachment; filename="${file.originalName}"`);
+    res.send(decrypted);
+  } catch (err) {
+    console.error("Download error:", err);
+    res.status(500).json({ error: "Download failed: " + err.message });
+  }
+});
+
+app.delete("/api/files/:id", auth, async (req, res) => {
+  try {
+    const file = await File.findById(req.params.id);
+    if (!file) return res.status(404).json({ error: "File not found" });
+
+    // Check if user is owner
+    if (file.owner.toString() !== req.user.userId) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+
+    // Delete file from disk
+    const filePath = path.join(__dirname, "uploads", file.filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    // Update user storage
+    await User.findByIdAndUpdate(req.user.userId, {
+      $inc: { storageUsed: -file.size }
+    });
+
+    // Delete record
+    await File.findByIdAndDelete(req.params.id);
+
+    // Log transfer
+    await TransferLog.create({
+      fileId: file._id,
+      action: "delete",
+      userId: req.user.userId,
+      groupId: file.group
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete error:", err);
+    res.status(500).json({ error: "Delete failed" });
+  }
+});
+
+    // Get group to access encryption key
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ error: "Group not found" });
+    }
+
+    // Check if user is member
+    const isMember = group.members.some(m => m.userId.toString() === req.user.userId);
+    if (!isMember) {
+      return res.status(403).json({ error: "Not a group member" });
+    }
+
+    // Read file
+    const filePath = path.join(__dirname, "uploads", req.file.filename);
+    const fileBuffer = fs.readFileSync(filePath);
+
+    // Encrypt file
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(
+      ENCRYPTION_ALGORITHM,
+      Buffer.from(group.encryptionKey, "hex"),
+      iv
+    );
+
+    const encrypted = Buffer.concat([cipher.update(fileBuffer), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+
+    // Save encrypted file
+    fs.writeFileSync(filePath, encrypted);
+
+    // Update user storage
+    await User.findByIdAndUpdate(req.user.userId, {
+      $inc: { storageUsed: req.file.size }
+    });
+
+    // Create file record
     const file = await File.create({
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        size: req.file.size,
-        mimeType: req.file.mimetype,
-        group: groupId,
-        owner: req.user.userId
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimeType: req.file.mimetype,
+      group: groupId,
+      owner: req.user.userId,
+      encryptionIV: iv.toString("hex"),
+      encryptionAuthTag: authTag.toString("hex"),
+      tags: tags ? JSON.parse(tags) : []
+    });
+
+    // Log transfer
+    await TransferLog.create({
+      fileId: file._id,
+      action: "upload",
+      userId: req.user.userId,
+      groupId: groupId
     });
 
     res.json(file);
+  } catch (err) {
+    console.error("Upload error:", err);
+    res.status(500).json({ error: "Upload failed: " + err.message });
+  }
 });
 
 app.get("/api/files/group/:id", auth, async (req, res) => {
-    const files = await File.find({ group: req.params.id });
+  try {
+    const files = await File.find({ group: req.params.id })
+      .populate("owner", "username email")
+      .sort({ uploadedAt: -1 });
     res.json(files);
+  } catch (err) {
+    console.error("Get files error:", err);
+    res.status(500).json({ error: "Failed to fetch files" });
+  }
+});
+
+app.post("/api/groups/join", auth, async (req, res) => {
+  try {
+    const { inviteCode } = req.body;
+    
+    const group = await Group.findOne({ inviteCode: inviteCode.toUpperCase() });
+    if (!group) return res.status(404).json({ error: "Invalid invite code" });
+
+    // Check if already member
+    const isMember = group.members.some(m => m.userId.toString() === req.user.userId);
+    if (isMember) return res.status(400).json({ error: "Already a member" });
+
+    // Add user to group
+    group.members.push({ userId: req.user.userId, role: "member" });
+    await group.save();
+
+    // Add group to user
+    await User.findByIdAndUpdate(req.user.userId, {
+      $push: { groups: group._id }
+    });
+
+    res.json(group);
+  } catch (err) {
+    console.error("Join group error:", err);
+    res.status(500).json({ error: "Failed to join group" });
+  }
 });
 
 // ====================== PEERS ======================
