@@ -46,12 +46,15 @@ app.use((req, res, next) => {
 
 // ====================== DB CONNECTION ======================
 mongoose
-    .connect(MONGODB_URI)
-    .then(() => console.log("✅ MongoDB Connected"))
-    .catch(err => {
-        console.error("❌ MongoDB Error:", err);
-        process.exit(1);
-    });
+  .connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/decloud', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+  })
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch(err => {
+    console.error("❌ MongoDB Error:", err);
+    process.exit(1);
+  });
 
 // ====================== SCHEMAS ======================
 const User = mongoose.model(
