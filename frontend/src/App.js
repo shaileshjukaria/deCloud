@@ -8,6 +8,12 @@ import "./App.css";
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
+// Axios instance for API calls
+const API = axios.create({
+  baseURL: API_URL,
+  withCredentials: true,
+});
+
 function AppContent() {
   const { toggleTheme, isDark } = useTheme();
   const [token, setToken] = useState(localStorage.getItem("token") || "");
@@ -211,7 +217,8 @@ function AppContent() {
         name: groupName,
         description: groupDesc,
       });
-      notify(`Group Created! Code: ${res.data.group.inviteCode}`);
+      // server returns the created group object directly
+      notify(`Group Created! Code: ${res.data.inviteCode}`);
       setGroupName("");
       setGroupDesc("");
       fetchGroups();
@@ -297,7 +304,11 @@ function AppContent() {
   /** ======================
    *  FORMAT HELPERS
    ======================== */
-  const formatSize = (b) => (b < 1024 ? b + "B" : (b / 1024).toFixed(1) + "KB");
+  const formatSize = (b) => {
+    if (b === null || b === undefined) return "0B";
+    if (b < 1024) return `${b}B`;
+    return `${(b / 1024).toFixed(1)}KB`;
+  };
   const formatDate = (d) => new Date(d).toLocaleString();
 
   const storagePercent = stats
@@ -606,7 +617,7 @@ function AppContent() {
                           Download
                         </button>
 
-                        {f.owner?._id === user.id && (
+                        {f.owner?._id?.toString() === user.id && (
                           <button className="danger" onClick={() => deleteFile(f._id)}>
                             Delete
                           </button>
