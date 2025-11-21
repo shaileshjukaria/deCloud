@@ -32,7 +32,30 @@ app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
 app.use(cors({
-    origin: FRONTEND_URL.split(',').map(u => u.trim()),
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps, Postman, curl)
+        if (!origin) return callback(null, true);
+        
+        // Allow localhost
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+            return callback(null, true);
+        }
+        
+        // Allow any IP on local network (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+        const localIPPattern = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
+        
+        if (localIPPattern.test(origin)) {
+            return callback(null, true);
+        }
+        
+        // Check against allowed URLs from .env
+        const allowedOrigins = FRONTEND_URL.split(',').map(u => u.trim());
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            return callback(null, true);
+        }
+        
+        callback(new Error('Not allowed by CORS'));
+    },
     credentials: true
 }));
 
@@ -568,10 +591,34 @@ app.get("/api/stats/dashboard", auth, async (req, res) => {
 });
 
 // ====================== SERVER ======================
-app.listen(PORT, () => {
-    console.log("============================================================");
-    console.log("🌐 DeCloud Backend Running");
-    console.log(`🚀 http://${getLocalIP()}:${PORT}`);
-    console.log(`🟣 Environment: ${NODE_ENV}`);
-    console.log("============================================================");
+app.listen(PORT, '0.0.0.0', () => {
+  console.log("============================================================");
+  console.log("🌐 DeCloud Backend Running");
+  console.log(`🚀 Local:    http://localhost:${PORT}`);
+  console.log(`🚀 Network:  http://${getLocalIP()}:${PORT}`);
+  console.log(`🌐 API:      http://${getLocalIP()}:${PORT}/api`);
+  console.log(`🟣 Environment: ${NODE_ENV}`);
+  console.log("============================================================");
+});
+// ====================== ROOT ROUTE (for testing) ======================
+app.get("/", (req, res) => {
+  res.json({
+    message: "🌐 DeCloud Backend is running!",
+    status: "online",
+    endpoints: {
+      auth: "/api/auth/login, /api/auth/register, /api/auth/me",
+      groups: "/api/groups, /api/groups/create, /api/groups/join",
+      files: "/api/files/upload, /api/files/group/:id, /api/files/download/:id",
+      peers: "/api/peers",
+      stats: "/api/stats/dashboard"
+    },
+    network: {
+      host: getLocalIP(),
+      port: PORT
+    }
+  });
+});
+
+app.get("/api", (req, res) => {
+  res.json({ message: "DeCloud API is running", version: "1.0.0" });
 });

@@ -9,10 +9,20 @@ import "./App.css";
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 // Axios instance for API calls
-const API = axios.create({
-  baseURL: API_URL,
-  withCredentials: true,
-});
+// Detect if we're on the network or localhost
+const getAPIBaseURL = () => {
+  // If we're accessing from network (not localhost), use network IP
+  const hostname = window.location.hostname;
+  
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return "http://localhost:5000/api";
+  } else {
+    // Use the same hostname but port 5000 for backend
+    return `http://${hostname}:5000/api`;
+  }
+};
+
+const API = axios.create({ baseURL: getAPIBaseURL() });
 
 function AppContent() {
   const { toggleTheme, isDark } = useTheme();
