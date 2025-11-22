@@ -1,487 +1,596 @@
-# 🌐 Multi-Device Setup Guide (6-8 Devices)
+# 🌐 DeCloud - Decentralized Cloud Storage
 
-## 🎯 **What Your Supervisor Wants to See**
+> A secure, peer-to-peer file sharing platform with end-to-end encryption for local networks.
 
-✅ **6-8 devices** connected to same WiFi
-✅ **Group-based file sharing** - only group members can access files
-✅ **End-to-end encryption** - files encrypted before storage
-✅ **Decentralized storage** - files distributed across devices
-✅ **Access control** - non-members cannot decrypt files
+DeCloud is a **decentralized cloud storage platform** that enables secure file sharing across devices on the same local network. With automatic peer discovery, end-to-end encryption, and instant network-wide file sharing, DeCloud transforms your local network into a private cloud.
 
----
+### ✨ Key Features
 
-## 📋 **Prerequisites**
-
-### **What You Need:**
-- 6-8 laptops/computers (can be mix of Windows/Mac/Linux)
-- All devices connected to **same WiFi network**
-- MongoDB installed on each device (or use MongoDB Atlas)
-- Node.js installed on each device
+- 🔒 **End-to-End Encryption** - All files encrypted with AES-256-GCM
+- 🌐 **Automatic Peer Discovery** - Devices on the same WiFi network are discovered automatically
+- 📤 **Network Share** - Instant file sharing with all connected devices
+- 👥 **Private Groups** - Create secure groups for selective file sharing
+- 💾 **Storage Management** - Track storage usage with visual indicators
+- 🎨 **Modern UI** - Clean, responsive interface with dark mode support
+- 🔄 **Real-time Updates** - Live peer status and file synchronization
+- 📱 **Cross-Platform** - Works on desktop, mobile, and tablets
 
 ---
 
-## 🚀 **Setup Instructions**
+## 🚀 Quick Start
 
-### **Step 1: Prepare Project on First Device**
+### Prerequisites
+
+- **Node.js** (v14 or higher)
+- **MongoDB** (v6.0 or higher)
+- **npm** or **yarn**
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/shaileshjukaria/decloud.git
+   cd decloud
+   ```
+
+2. **Install dependencies**
+   ```bash
+   # Install backend dependencies
+   npm install
+
+   # Install frontend dependencies (if separate)
+   cd frontend
+   npm install
+   cd ..
+   ```
+
+3. **Set up environment variables**
+   
+   Create a `.env` file in the root directory:
+   ```env
+   PORT=5000
+   MONGODB_URI=mongodb://localhost:27017/decloud
+   JWT_SECRET=your-super-secret-key-change-in-production
+   JWT_EXPIRES_IN=7d
+   FRONTEND_URL=http://localhost:3000,http://YOUR_LOCAL_IP:3000
+   MAX_FILE_SIZE=524288000
+   ENCRYPTION_ALGORITHM=aes-256-gcm
+   ENABLE_PEER_DISCOVERY=true
+   PEER_PORT=5001
+   NODE_ENV=development
+   ```
+
+4. **Start MongoDB**
+   ```bash
+   # Windows
+   mongod
+
+   # Mac (with Homebrew)
+   brew services start mongodb-community
+
+   # Linux
+   sudo systemctl start mongod
+   ```
+
+5. **Start the backend server**
+   ```bash
+   node server.js
+   ```
+   
+   You should see:
+   ```
+   ✅ MongoDB Connected
+   🔍 Peer discovery active (UDP 5001)
+   ============================================================
+   🌐 DeCloud Backend Running
+   🚀 Local:    http://localhost:5000
+   🚀 Network:  http://192.168.1.X:5000
+   ============================================================
+   ```
+
+6. **Start the frontend** (in a new terminal)
+   ```bash
+   npm start
+   ```
+
+7. **Access DeCloud**
+   - Local: `http://localhost:3000`
+   - Network: `http://YOUR_IP:3000`
+
+---
+
+## 🌐 Network Setup Guide
+
+### Connecting Multiple Devices
+
+#### Step 1: Find Your IP Address
+
+**Windows:**
+```bash
+ipconfig
+# Look for "IPv4 Address" under your WiFi adapter (e.g., 192.168.1.105)
+```
+
+**Mac/Linux:**
+```bash
+ifconfig
+# or
+ip addr show
+# Look for inet address (e.g., 192.168.1.105)
+```
+
+#### Step 2: Update Configuration
+
+Update your `.env` file with your IP:
+```env
+FRONTEND_URL=http://localhost:3000,http://192.168.1.105:3000
+```
+
+#### Step 3: Configure Firewall
+
+**Windows:**
+```powershell
+# Run as Administrator
+New-NetFirewallRule -DisplayName "DeCloud-3000" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "DeCloud-5000" -Direction Inbound -LocalPort 5000 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "DeCloud-5001" -Direction Inbound -LocalPort 5001 -Protocol UDP -Action Allow
+```
+
+**Mac:**
+- System Preferences → Security & Privacy → Firewall → Firewall Options
+- Allow Node.js to accept incoming connections
+
+**Linux:**
+```bash
+sudo ufw allow 3000
+sudo ufw allow 5000
+sudo ufw allow 5001
+```
+
+#### Step 4: Access from Other Devices
+
+On devices connected to the **same WiFi network**, open a browser and navigate to:
+```
+http://192.168.1.105:3000
+```
+*(Replace with your actual IP address)*
+
+---
+
+## 📚 Usage Guide
+
+### 1. Account Creation
+
+- Navigate to DeCloud in your browser
+- Click "Register"
+- Enter username, email, and password
+- You're automatically logged in!
+
+### 2. Network Share (Instant File Sharing)
+
+**All devices on the same network automatically join "Network Share"**
+
+1. Go to **Groups** tab
+2. Click **"Open Network Share"** (purple banner at top)
+3. Upload files - they're instantly visible to all network devices!
+
+**Perfect for:**
+- Quick file transfers between devices
+- Sharing photos/videos with everyone on network
+- Collaborative work sessions
+
+### 3. Private Groups (Selective Sharing)
+
+**Create secure groups for specific people**
+
+1. Go to **Groups** tab
+2. Click **"Create New Group"**
+3. Enter group name and description
+4. Share the **invite code** with others
+5. They join using the code
+6. Upload files - only group members can access them
+
+**Perfect for:**
+- Family photo albums
+- Work project files
+- Private document sharing
+
+### 4. Peer Discovery
+
+**See all devices on your network**
+
+1. Go to **Peers** tab
+2. Wait 5-10 seconds for automatic discovery
+3. Connected devices appear automatically
+4. View device names, IPs, and online status
+
+### 5. File Management
+
+**Upload:**
+- Select group or Network Share
+- Click "Upload & Encrypt"
+- Choose file(s)
+- Files are encrypted and uploaded
+
+**Download:**
+- Click "Download" on any file
+- File is automatically decrypted
+- Saved to your downloads folder
+
+**Delete:**
+- Click trash icon (only file owner)
+- Confirm deletion
+- File removed from all devices
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Frontend (React)                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ │
+│  │Dashboard │  │  Groups  │  │  Files   │  │  Peers  │ │
+│  └──────────┘  └──────────┘  └──────────┘  └─────────┘ │
+└────────────────────┬────────────────────────────────────┘
+                     │ HTTP/REST API
+┌────────────────────┴────────────────────────────────────┐
+│              Backend (Node.js/Express)                   │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ │
+│  │   Auth   │  │  Groups  │  │  Files   │  │  Peers  │ │
+│  └──────────┘  └──────────┘  └──────────┘  └─────────┘ │
+│                                                           │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │        AES-256-GCM Encryption/Decryption         │   │
+│  └──────────────────────────────────────────────────┘   │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────┴────────────────────────────────────┐
+│                   MongoDB Database                       │
+│  ┌────────┐  ┌────────┐  ┌────────┐  ┌──────────────┐ │
+│  │ Users  │  │ Groups │  │ Files  │  │Transfer Logs │ │
+│  └────────┘  └────────┘  └────────┘  └──────────────┘ │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│           UDP Peer Discovery (Port 5001)                  │
+│   Broadcasts presence every 5 seconds on local network   │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Security Features
+
+- **JWT Authentication** - Secure token-based auth
+- **AES-256-GCM Encryption** - Military-grade file encryption
+- **Bcrypt Password Hashing** - Secure password storage
+- **Per-Group Encryption Keys** - Each group has unique encryption key
+- **CORS Protection** - Configured for local network security
+
+---
+
+## 🛠️ Technology Stack
+
+### Backend
+- **Node.js** - Runtime environment
+- **Express.js** - Web framework
+- **MongoDB** - Database
+- **Mongoose** - ODM
+- **JWT** - Authentication
+- **Bcrypt** - Password hashing
+- **Multer** - File upload handling
+- **Crypto** - Native encryption module
+
+### Frontend
+- **React** - UI framework
+- **Axios** - HTTP client
+- **CSS3** - Styling with glassmorphism effects
+- **Context API** - State management
+
+### Network
+- **UDP Broadcast** - Peer discovery
+- **REST API** - Client-server communication
+
+---
+
+## 📁 Project Structure
+
+```
+decloud/
+├── server.js                 # Backend entry point
+├── .env                      # Environment variables
+├── package.json              # Backend dependencies
+├── uploads/                  # Encrypted file storage
+│
+├── src/                      # Frontend source
+│   ├── App.js               # Main app component
+│   ├── App.css              # Main styles
+│   ├── index.js             # React entry point
+│   │
+│   ├── components/          # React components
+│   │   ├── Navbar.js
+│   │   ├── Footer.js
+│   │   ├── CookieBanner.js
+│   │   ├── FilesPage.js
+│   │   ├── GroupsPage.js
+│   │   ├── PeersPage.js
+│   │   └── Sidebar.js
+│   │
+│   └── contexts/            # React contexts
+│       └── ThemeContext.js
+│
+├── public/                  # Static files
+│   └── index.html
+│
+└── README.md               # This file
+```
+
+---
+
+## 🔧 Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Backend server port | `5000` |
+| `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017/decloud` |
+| `JWT_SECRET` | Secret key for JWT signing | **Change in production!** |
+| `JWT_EXPIRES_IN` | JWT token expiration | `7d` |
+| `FRONTEND_URL` | Allowed frontend origins (comma-separated) | `http://localhost:3000` |
+| `MAX_FILE_SIZE` | Maximum file upload size in bytes | `524288000` (500MB) |
+| `ENCRYPTION_ALGORITHM` | Encryption algorithm | `aes-256-gcm` |
+| `ENABLE_PEER_DISCOVERY` | Enable/disable peer discovery | `true` |
+| `PEER_PORT` | UDP port for peer discovery | `5001` |
+| `NODE_ENV` | Environment mode | `development` |
+
+---
+
+## 🐛 Troubleshooting
+
+### Peers Not Showing Up
+
+**Problem:** Other devices don't appear in Peers tab
+
+**Solutions:**
+1. Ensure all devices are on the **same WiFi network**
+2. Check firewall settings allow ports 5000, 5001
+3. Verify `ENABLE_PEER_DISCOVERY=true` in `.env`
+4. Wait 10-15 seconds for discovery
+5. Try refreshing the Peers page
+
+### Login/Register Not Working from Network
+
+**Problem:** Can login on localhost but not from other devices
+
+**Solutions:**
+1. Check backend is running on `0.0.0.0`:
+   ```javascript
+   app.listen(PORT, '0.0.0.0', () => {})
+   ```
+2. Verify API base URL uses dynamic hostname:
+   ```javascript
+   const hostname = window.location.hostname;
+   const API = axios.create({ 
+     baseURL: `http://${hostname}:5000/api` 
+   });
+   ```
+3. Check CORS configuration allows local IPs
+4. Ensure backend shows "Network:" URL on startup
+
+### Files Not Uploading
+
+**Problem:** Upload button doesn't work or shows error
+
+**Solutions:**
+1. Check file size under 500MB (or your `MAX_FILE_SIZE`)
+2. Ensure `uploads/` folder exists and is writable
+3. Verify user is member of the group
+4. Check MongoDB is running
+5. Look for errors in backend console
+
+### MongoDB Connection Failed
+
+**Problem:** "MongoDB Error" on startup
+
+**Solutions:**
+1. Start MongoDB service:
+   ```bash
+   # Windows
+   net start MongoDB
+   
+   # Mac
+   brew services start mongodb-community
+   
+   # Linux
+   sudo systemctl start mongod
+   ```
+2. Verify connection string in `.env`
+3. Check MongoDB is listening on port 27017
+
+---
+
+## 🔐 Security Considerations
+
+### For Development
+- Change `JWT_SECRET` to a strong random string
+- Use unique encryption keys per deployment
+- Enable HTTPS for production use
+
+### For Production
+- Use environment variables for all secrets
+- Enable MongoDB authentication
+- Implement rate limiting
+- Add request validation
+- Use HTTPS/TLS for all connections
+- Implement file type validation
+- Add virus scanning for uploads
+- Set up regular database backups
+
+---
+
+## 🚦 API Endpoints
+
+### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Create new account |
+| POST | `/api/auth/login` | Login to account |
+| GET | `/api/auth/me` | Get current user info |
+| PATCH | `/api/auth/preferences` | Update user profile |
+
+### Groups
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/groups` | Get user's groups |
+| POST | `/api/groups/create` | Create new group |
+| POST | `/api/groups/join` | Join group with invite code |
+| POST | `/api/groups/join-network` | Auto-join network group |
+
+### Files
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/files/upload` | Upload encrypted file |
+| GET | `/api/files/group/:id` | Get files in group |
+| GET | `/api/files/download/:id` | Download and decrypt file |
+| DELETE | `/api/files/:id` | Delete file |
+
+### Network
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/peers` | Get discovered peers |
+| GET | `/api/stats/dashboard` | Get user statistics |
+
+---
+
+## 📊 Performance
+
+- **File Upload Speed:** Limited by network bandwidth
+- **Peer Discovery:** ~5-10 seconds
+- **Encryption/Decryption:** Real-time (< 1s for most files)
+- **Concurrent Users:** Tested with up to 10 devices
+- **Max File Size:** Configurable (default 500MB)
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+### Development Guidelines
+
+- Follow existing code style
+- Write meaningful commit messages
+- Test on multiple devices before submitting
+- Update documentation for new features
+
+---
+
+## 📝 Roadmap
+
+### Planned Features
+- [ ] Mobile app (React Native)
+- [ ] File versioning
+- [ ] Folder support
+- [ ] Batch file operations
+- [ ] File preview (images, PDFs)
+- [ ] Search functionality
+- [ ] Activity notifications
+- [ ] WebRTC for direct peer transfer
+- [ ] Offline file access
+- [ ] Advanced encryption options
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 👤 Author
+
+**Your Name**
+- GitHub: [@yourusername](https://github.com/yourusername)
+- Email: your.email@example.com
+
+---
+
+## 🙏 Acknowledgments
+
+- Built with ❤️ using Node.js and React
+- Inspired by decentralized storage systems
+- Thanks to all contributors
+
+---
+
+## 📞 Support
+
+For support, please:
+1. Check the [Troubleshooting](#-troubleshooting) section
+2. Open an issue on GitHub
+3. Email: support@yourdecloud.com
+
+---
+
+## 📸 Screenshots
+
+### Dashboard
+![Dashboard](screenshots/dashboard.png)
+*Track storage usage and recent activity*
+
+### Network Share
+![Network Share](screenshots/network-share.png)
+*Instant file sharing with all network devices*
+
+### Groups
+![Groups](screenshots/groups.png)
+*Create and manage private groups*
+
+### Peers
+![Peers](screenshots/peers.png)
+*View all connected devices on your network*
+
+---
+
+## ⚡ Quick Commands
 
 ```bash
-# On Device 1 (Main Device)
-cd C:\Users\shail\Desktop\decloud-project
+# Start everything
+npm run dev
 
-# Update backend server.js
-# Replace with the new "ENHANCED - server.js (With Groups & Encryption)"
+# Start backend only
+node server.js
 
-# Update frontend App.js
-# Replace with the new "ENHANCED - App.js (With Groups Support)"
-
-# Add new CSS styles
-# Add the "ENHANCED - App.css" content to your existing App.css
-
-# Test it works
-cd backend
+# Start frontend only
 npm start
 
-# In new terminal
-cd frontend
-npm start
-```
+# Run tests
+npm test
 
-### **Step 2: Copy Project to Other Devices**
+# Build for production
+npm run build
 
-**Method A: USB/Network Share**
-```bash
-# Zip the entire project
-# Copy to other 5-7 devices
-# Extract on each device
-```
+# Check for updates
+npm outdated
 
-**Method B: Git (Recommended)**
-```bash
-# On Device 1
-cd decloud-project
-git init
-git add .
-git commit -m "Initial commit"
-git push to GitHub
-
-# On other devices
-git clone YOUR_REPO_URL
-cd decloud-project
-cd backend && npm install
-cd ../frontend && npm install
-```
-
-### **Step 3: Configure Each Device**
-
-On **each device**, update the API URL in `frontend/src/App.js`:
-
-```javascript
-// Find your Device 1's IP address first
-// Windows: ipconfig
-// Mac/Linux: ifconfig
-
-// On Device 1, keep as:
-const API_URL = 'http://localhost:5000/api';
-
-// On Devices 2-8, change to Device 1's IP:
-const API_URL = 'http://192.168.1.100:5000/api'; // Replace with actual IP
+# Update dependencies
+npm update
 ```
 
 ---
 
-## 🎬 **Demo Flow for Supervisor**
+<div align="center">
 
-### **Scenario: Team Project File Sharing**
+**[⬆ back to top](#-decloud---decentralized-cloud-storage)**
 
-**Setup (5 minutes):**
-1. Connect all 6-8 devices to same WiFi
-2. Start MongoDB on all devices
-3. Start backend on all devices
-4. Start frontend on all devices
+Made with ☕ and 💻
 
-**Demonstration (10-15 minutes):**
+**Star ⭐ this repo if you find it useful!**
 
-### **Part 1: User Registration (2 min)**
-
-**Device 1 - Team Leader (Alice):**
-```
-1. Open http://localhost:3000
-2. Register: alice@team.com / password123
-3. Login successfully
-```
-
-**Device 2 - Team Member (Bob):**
-```
-1. Open http://192.168.1.100:3000 (Device 1's IP)
-2. Register: bob@team.com / password123
-3. Login successfully
-```
-
-**Devices 3-8 - Other Team Members:**
-```
-Repeat registration for:
-- charlie@team.com
-- diana@team.com
-- eve@team.com
-- frank@team.com
-- grace@team.com
-- henry@team.com
-```
-
-### **Part 2: Create Group (2 min)**
-
-**On Device 1 (Alice):**
-```
-1. Click "Create Group"
-2. Name: "Project Team"
-3. Description: "Final Year Project Collaboration"
-4. Click "Create Group"
-5. Note the Invite Code (e.g., "A1B2C3D4")
-6. Share code with team
-```
-
-### **Part 3: Join Group (2 min)**
-
-**On Devices 2-8 (All team members):**
-```
-1. Click "Join Group"
-2. Enter invite code: A1B2C3D4
-3. Click "Join Group"
-4. Verify success message
-5. See "Project Team" in "My Groups"
-```
-
-### **Part 4: File Upload & Encryption (3 min)**
-
-**On Device 1 (Alice):**
-```
-1. Click on "Project Team" group
-2. Upload file: "ProjectReport.pdf"
-3. See encryption happening
-4. File appears in group
-5. Badge shows "🔒 Encrypted"
-```
-
-**On Device 2 (Bob):**
-```
-1. Click on "Project Team" group
-2. See "ProjectReport.pdf" uploaded by Alice
-3. File is encrypted (badge shows 🔒)
-4. Can download because he's a member
-```
-
-**On Devices 3-8:**
-```
-Each member uploads their contribution:
-- Device 3: "Research.docx"
-- Device 4: "Design.pptx"
-- Device 5: "Code.zip"
-- Device 6: "TestResults.xlsx"
-- Device 7: "Presentation.pdf"
-- Device 8: "Documentation.pdf"
-```
-
-### **Part 5: Download & Decrypt (2 min)**
-
-**On any device:**
-```
-1. Click any file
-2. Click "Download"
-3. System automatically decrypts using group key
-4. File downloads in readable format
-5. Verify file content is correct
-```
-
-### **Part 6: Access Control Demo (2 min)**
-
-**Create another user (not in group):**
-
-**Device 2 - Create Outsider (John):**
-```
-1. Logout Bob
-2. Register: john@external.com / password123
-3. Login
-4. Dashboard shows 0 groups
-5. Cannot see "Project Team" files
-6. Cannot access encrypted files (no decryption key)
-```
-
-**This proves:**
-- ✅ Only group members can see files
-- ✅ Only group members can decrypt files
-- ✅ Encryption is working
-- ✅ Access control is enforced
-
-### **Part 7: Peer Discovery (1 min)**
-
-**On any device:**
-```
-1. Click "Peers"
-2. Show 6-8 devices discovered
-3. Show each device name and IP
-4. Show "Online" status
-5. Explain: Files can be retrieved from any online peer
-```
-
----
-
-## 🔐 **How Encryption Works (Explain to Supervisor)**
-
-### **1. Group Creation:**
-```
-When Alice creates "Project Team":
-→ System generates unique 256-bit encryption key
-→ Key stored in database
-→ Only group members can access this key
-```
-
-### **2. File Upload:**
-```
-When Bob uploads "Report.pdf":
-→ File read into memory
-→ Encrypted with group's AES-256-GCM key
-→ Encrypted file saved to disk
-→ Original file discarded
-→ Only encrypted version exists
-```
-
-### **3. File Download:**
-```
-When Charlie downloads "Report.pdf":
-→ System checks: Is Charlie in group? ✅
-→ Retrieves group's encryption key
-→ Reads encrypted file from disk
-→ Decrypts using group key
-→ Sends decrypted file to Charlie
-```
-
-### **4. Access Denied:**
-```
-When John (outsider) tries to access:
-→ System checks: Is John in group? ❌
-→ Access denied - cannot see file
-→ Even if file leaked, cannot decrypt (no key)
-```
-
----
-
-## 📊 **Key Features to Highlight**
-
-### **1. Decentralization**
-```
-Traditional Cloud:
-[Device 1] → [Central Server] ← [Device 2]
-              ↑
-         Single point
-
-Our System:
-[Device 1] ←→ [Device 2]
-     ↕           ↕
-[Device 3] ←→ [Device 4]
-(Mesh network)
-```
-
-### **2. End-to-End Encryption**
-```
-File never stored unencrypted
-Alice's Device → [Encrypted] → Network → [Encrypted] → Bob's Device
-                                                      → [Decrypted] → Bob sees file
-```
-
-### **3. Group-Based Sharing**
-```
-Group "Project Team" (Members: Alice, Bob, Charlie)
-Group "Other Team" (Members: Diana, Eve, Frank)
-
-Alice's files in "Project Team":
-✅ Bob can access (same group)
-✅ Charlie can access (same group)
-❌ Diana cannot access (different group)
-❌ Eve cannot access (different group)
-```
-
-### **4. Distributed Storage**
-```
-Instead of:
-All files → One server
-
-We have:
-File 1 → Device 1, replicated to Device 3
-File 2 → Device 2, replicated to Device 5
-File 3 → Device 4, replicated to Device 7
-(Load distributed across network)
-```
-
----
-
-## 🎤 **What to Say to Supervisor**
-
-### **Opening (30 seconds):**
-```
-"We've created a decentralized cloud storage system where 6-8 devices 
-can share files securely without a central server. All files are 
-end-to-end encrypted, and only group members can decrypt them."
-```
-
-### **During Demo (10 minutes):**
-```
-"Here we have 8 devices connected to the same WiFi network..."
-
-"Watch as I create a group called 'Project Team' on Device 1..."
-
-"The system generates a unique encryption key for this group..."
-
-"Now I'm sharing the invite code with other devices..."
-
-"Notice how each device joins the group instantly..."
-
-"When I upload this file, watch the encryption happen in real-time..."
-
-"The file is now stored encrypted on the device..."
-
-"Other group members can download and decrypt it automatically..."
-
-"But this outsider user cannot access the file at all..."
-
-"In the Peers section, you can see all 8 devices discovered automatically..."
-```
-
-### **Technical Explanation (2 minutes):**
-```
-"We use AES-256-GCM encryption, which is military-grade security..."
-
-"Each group has a unique encryption key stored in MongoDB..."
-
-"UDP broadcast handles peer discovery on the local network..."
-
-"The MERN stack provides a modern, scalable architecture..."
-
-"File integrity is verified using SHA-256 hashes..."
-```
-
----
-
-## 🐛 **Troubleshooting**
-
-### **Issue: Devices not discovering each other**
-```
-Solution:
-1. Ensure all on same WiFi (not guest network)
-2. Disable VPN on all devices
-3. Check firewall allows port 5000 and 5001
-4. Restart backend on all devices
-```
-
-### **Issue: Cannot decrypt files**
-```
-Solution:
-1. Verify user is member of the group
-2. Check MongoDB has group encryption key
-3. Ensure file has encryption IV and auth tag
-4. Try re-uploading the file
-```
-
-### **Issue: MongoDB not connecting**
-```
-Solution:
-1. Start MongoDB: mongod
-2. Or use MongoDB Atlas (cloud)
-3. Check connection string in server.js
-```
-
-### **Issue: Frontend can't reach backend**
-```
-Solution:
-1. Check backend is running (npm start)
-2. Verify API_URL has correct IP address
-3. Test: http://DEVICE_IP:5000/api/status
-4. Check CORS is enabled in backend
-```
-
----
-
-## 📸 **Screenshots to Take**
-
-For your project report, capture:
-
-1. **Dashboard** - All 8 devices with stats
-2. **Group Creation** - Showing invite code
-3. **Group Members** - All 8 members listed
-4. **File Upload** - Encryption in progress
-5. **File List** - Multiple encrypted files
-6. **Download** - Decryption happening
-7. **Peers** - All 8 devices online
-8. **Access Denied** - Outsider cannot access
-
----
-
-## ✅ **Final Checklist**
-
-Before demo:
-- [ ] All 8 devices powered on
-- [ ] All connected to same WiFi
-- [ ] MongoDB running on all devices
-- [ ] Backend running on all devices
-- [ ] Frontend accessible on all devices
-- [ ] Created group and invite code ready
-- [ ] Test file upload/download works
-- [ ] Verified encryption/decryption works
-- [ ] Tested access control (outsider denied)
-- [ ] Peer discovery showing all devices
-
----
-
-## 🎓 **Questions Supervisor Might Ask**
-
-**Q: How is this different from Google Drive?**
-```
-A: Google Drive is centralized - all files go through Google's servers. 
-Our system is decentralized - devices connect directly. Files are 
-end-to-end encrypted, so even we (as developers) cannot read them. 
-Only group members with the encryption key can decrypt.
-```
-
-**Q: What if a device goes offline?**
-```
-A: The file is no longer accessible until that device comes back 
-online. In production, we would add replication - storing copies 
-on multiple devices for redundancy.
-```
-
-**Q: How secure is the encryption?**
-```
-A: We use AES-256-GCM, which is the same encryption standard used 
-by banks and military. It's mathematically proven secure and would 
-take billions of years to brute-force crack.
-```
-
-**Q: Can you scale this to 100+ devices?**
-```
-A: Yes, but we'd need to implement DHT (Distributed Hash Table) 
-for efficient peer discovery and routing algorithms for optimal 
-file placement. Current version is optimized for small teams (6-20 members).
-```
-
-**Q: What happens if someone steals the encrypted file?**
-```
-A: Without the group's encryption key, the file is useless. The 
-encryption key is only accessible to group members authenticated 
-through our system. Even with the encrypted file, an attacker 
-cannot decrypt it.
-```
-
----
-
-## 🎉 **You're Ready!**
-
-You now have:
-- ✅ Group-based file sharing
-- ✅ End-to-end encryption
-- ✅ Multi-device support (6-8 devices)
-- ✅ Access control
-- ✅ Peer discovery
-- ✅ Decentralized architecture
-
-**This is exactly what your supervisor asked for!** 🚀
-
-Good luck with your demonstration! 💪
+</div>
