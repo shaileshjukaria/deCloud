@@ -9,17 +9,15 @@ import "./App.css";
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 // Axios instance for API calls
-// Detect if we're on the network or localhost
+// Detect if we're on ngrok or localhost
 const getAPIBaseURL = () => {
-  // If we're accessing from network (not localhost), use network IP
   const hostname = window.location.hostname;
   
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return "http://localhost:5000/api";
-  } else {
-    // Use the same hostname but port 5000 for backend
-    return `http://${hostname}:5000/api`;
+  if (hostname.includes('ngrok')) {
+    return "https://YOUR-BACKEND-NGROK-URL.ngrok-free.app/api";
   }
+  
+  return "http://localhost:5000/api";
 };
 
 const API = axios.create({ baseURL: getAPIBaseURL() });
