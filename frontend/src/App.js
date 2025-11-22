@@ -437,6 +437,11 @@ function AppContent() {
           )}
         </aside>
 
+        <div 
+          className={`sidebar-overlay ${sidebarOpen ? "active" : ""}`}
+          onClick={() => setSidebarOpen(false)}
+        />
+
         {/* MAIN CONTENT */}
         <main className="main-content">
           {/* BREADCRUMBS */}

@@ -292,16 +292,30 @@ html, body {
 
 /* ==================== SIDEBAR ==================== */
 .sidebar {
-  width: 260px;
   position: fixed;
   left: 0;
-  top: 70px;
-  height: calc(100vh - 70px);
+  top: 60px;
+  width: 280px;
+  z-index: 100;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border-color);
-  padding: 24px 16px;
-  overflow-y: auto;
   box-shadow: var(--shadow-sm);
+}
+
+/* Overlay used to dim page when sidebar is open on small screens */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 90; /* below sidebar (100) so sidebar remains interactive on mobile */
+}
+
+.sidebar-overlay.active {
+  opacity: 1;
+  pointer-events: all;
 }
 
 .sidebar-title {
@@ -347,8 +361,8 @@ html, body {
 /* ==================== MAIN CONTENT ==================== */
 .main-content {
   flex: 1;
-  margin-left: 260px;
-  padding: 40px;
+  margin-left: 280px;
+  padding: 24px;
   min-height: calc(100vh - 70px);
 }
 
