@@ -151,6 +151,33 @@ const Peer = mongoose.model(
     })
 );
 
+// ====================== AUTO NETWORK GROUP ======================
+async function ensureNetworkGroup() {
+  try {
+    const networkGroup = await Group.findOne({ name: "__NETWORK_SHARE__" });
+    
+    if (!networkGroup) {
+      const encryptionKey = crypto.randomBytes(32).toString("hex");
+      await Group.create({
+        name: "__NETWORK_SHARE__",
+        description: "Automatic group for local network sharing",
+        encryptionKey,
+        inviteCode: "NETWORK",
+        members: [],
+        isAutoGroup: true
+      });
+      console.log("✅ Network sharing group created");
+    }
+  } catch (err) {
+    console.error("Network group error:", err);
+  }
+}
+
+// Create network group on startup
+mongoose.connection.once('open', () => {
+  ensureNetworkGroup();
+});
+
 // ====================== UTILS ======================
 function getLocalIP() {
     const interfaces = os.networkInterfaces();
@@ -221,6 +248,8 @@ if (ENABLE_PEER_DISCOVERY) {
         }, 5000);
     });
 }
+
+
 
 // ====================== AUTH MIDDLEWARE ======================
 function auth(req, res, next) {
@@ -319,6 +348,41 @@ app.get("/api/auth/me", auth, async (req, res) => {
   }
 });
 
+// Auto-join network group
+app.post("/api/groups/join-network", auth, async (req, res) => {
+  try {
+    const networkGroup = await Group.findOne({ name: "__NETWORK_SHARE__" });
+    if (!networkGroup) return res.status(404).json({ error: "Network group not found" });
+
+    // Check if already member
+    const isMember = networkGroup.members.some(m => m.userId.toString() === req.user.userId);
+    
+    if (!isMember) {
+      networkGroup.members.push({ userId: req.user.userId, role: "member" });
+      await networkGroup.save();
+      
+      await User.findByIdAndUpdate(req.user.userId, {
+        $addToSet: { groups: networkGroup._id }
+      });
+    }
+
+    res.json({
+      success: true,
+      group: {
+        id: networkGroup._id.toString(),
+        _id: networkGroup._id,
+        name: "Network Share",
+        description: "Share files with all devices on this network",
+        inviteCode: networkGroup.inviteCode,
+        memberCount: networkGroup.members.length
+      }
+    });
+  } catch (err) {
+    console.error("Join network error:", err);
+    res.status(500).json({ error: "Failed to join network group" });
+  }
+});
+
 // Global error handler to avoid crashing on unhandled errors
 app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
@@ -375,6 +439,69 @@ app.post("/api/files/upload", auth, upload.single("file"), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
+
+    // Get group to access encryption key
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ error: "Group not found" });
+    }
+
+    // Check if user is member
+    const isMember = group.members.some(m => m.userId.toString() === req.user.userId);
+    if (!isMember) {
+      return res.status(403).json({ error: "Not a group member" });
+    }
+
+    // Read file
+    const filePath = path.join(__dirname, "uploads", req.file.filename);
+    const fileBuffer = fs.readFileSync(filePath);
+
+    // Encrypt file
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(
+      ENCRYPTION_ALGORITHM,
+      Buffer.from(group.encryptionKey, "hex"),
+      iv
+    );
+
+    const encrypted = Buffer.concat([cipher.update(fileBuffer), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+
+    // Save encrypted file
+    fs.writeFileSync(filePath, encrypted);
+
+    // Update user storage
+    await User.findByIdAndUpdate(req.user.userId, {
+      $inc: { storageUsed: req.file.size }
+    });
+
+    // Create file record
+    const file = await File.create({
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimeType: req.file.mimetype,
+      group: groupId,
+      owner: req.user.userId,
+      encryptionIV: iv.toString("hex"),
+      encryptionAuthTag: authTag.toString("hex"),
+      tags: tags ? JSON.parse(tags) : []
+    });
+
+    // Log transfer
+    await TransferLog.create({
+      fileId: file._id,
+      action: "upload",
+      userId: req.user.userId,
+      groupId: groupId
+    });
+
+    res.json(file);
+  } catch (err) {
+    console.error("Upload error:", err);
+    res.status(500).json({ error: "Upload failed: " + err.message });
+  }
+});
 
 app.get("/api/files/download/:id", auth, async (req, res) => {
   try {
@@ -465,69 +592,6 @@ app.delete("/api/files/:id", auth, async (req, res) => {
   } catch (err) {
     console.error("Delete error:", err);
     res.status(500).json({ error: "Delete failed" });
-  }
-});
-
-    // Get group to access encryption key
-    const group = await Group.findById(groupId);
-    if (!group) {
-      return res.status(404).json({ error: "Group not found" });
-    }
-
-    // Check if user is member
-    const isMember = group.members.some(m => m.userId.toString() === req.user.userId);
-    if (!isMember) {
-      return res.status(403).json({ error: "Not a group member" });
-    }
-
-    // Read file
-    const filePath = path.join(__dirname, "uploads", req.file.filename);
-    const fileBuffer = fs.readFileSync(filePath);
-
-    // Encrypt file
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(
-      ENCRYPTION_ALGORITHM,
-      Buffer.from(group.encryptionKey, "hex"),
-      iv
-    );
-
-    const encrypted = Buffer.concat([cipher.update(fileBuffer), cipher.final()]);
-    const authTag = cipher.getAuthTag();
-
-    // Save encrypted file
-    fs.writeFileSync(filePath, encrypted);
-
-    // Update user storage
-    await User.findByIdAndUpdate(req.user.userId, {
-      $inc: { storageUsed: req.file.size }
-    });
-
-    // Create file record
-    const file = await File.create({
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: req.file.size,
-      mimeType: req.file.mimetype,
-      group: groupId,
-      owner: req.user.userId,
-      encryptionIV: iv.toString("hex"),
-      encryptionAuthTag: authTag.toString("hex"),
-      tags: tags ? JSON.parse(tags) : []
-    });
-
-    // Log transfer
-    await TransferLog.create({
-      fileId: file._id,
-      action: "upload",
-      userId: req.user.userId,
-      groupId: groupId
-    });
-
-    res.json(file);
-  } catch (err) {
-    console.error("Upload error:", err);
-    res.status(500).json({ error: "Upload failed: " + err.message });
   }
 });
 

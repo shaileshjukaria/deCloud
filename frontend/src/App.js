@@ -112,18 +112,27 @@ function AppContent() {
   };
 
   const fetchUser = async () => {
-    try {
-      const res = await API.get("/auth/me");
-      setUser(res.data);
-      setEditUsername(res.data.username);
-      setEditEmail(res.data.email);
-      fetchGroups();
-      fetchPeers();
-      fetchStats();
-    } catch (err) {
-      if (err.response?.status === 401) logout();
+  try {
+    const res = await API.get("/auth/me");
+    setUser(res.data);
+    setEditUsername(res.data.username);
+    setEditEmail(res.data.email);
+    
+    // Auto-join network group
+    await API.post("/groups/join-network").catch(err => 
+      console.log("Network group join:", err.response?.data)
+    );
+    
+    fetchGroups();
+    fetchPeers();
+    fetchStats();
+  } catch (err) {
+    console.error(err);
+    if (err.response?.status === 401 || err.response?.status === 403) {
+      logout();
     }
-  };
+  }
+};
 
   const fetchGroups = async () => {
     try {
@@ -549,6 +558,50 @@ function AppContent() {
                   </form>
                 </div>
 
+                {/* NETWORK SHARE BANNER */}
+                <div className="card" style={{ 
+                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  color: "white",
+                  marginBottom: "24px",
+                  border: "none"
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div>
+                      <h3 style={{ color: "white", marginBottom: "8px" }}>
+                        🌐 Network Share
+                      </h3>
+                      <p style={{ opacity: 0.9, fontSize: "14px", margin: 0 }}>
+                        Share files instantly with all {peers.length} device{peers.length !== 1 ? 's' : ''} on your network
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const networkGroup = groups.find(g => g.name === "__NETWORK_SHARE__" || g.inviteCode === "NETWORK");
+                        if (networkGroup) {
+                          selectGroup(networkGroup);
+                        } else {
+                          notify("Network group not found. Refreshing...", "info");
+                          fetchGroups();
+                        }
+                      }}
+                      style={{
+                        background: "rgba(255,255,255,0.2)",
+                        border: "2px solid white",
+                        color: "white",
+                        padding: "12px 24px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontWeight: "600",
+                        transition: "all 0.3s"
+                      }}
+                      onMouseOver={(e) => e.target.style.background = "rgba(255,255,255,0.3)"}
+                      onMouseOut={(e) => e.target.style.background = "rgba(255,255,255,0.2)"}
+                    >
+                      Open Network Share →
+                    </button>
+                  </div>
+                </div>
+
                 {/* JOIN GROUP */}
                 <div className="card">
                   <h3>Join Group</h3>
@@ -568,19 +621,22 @@ function AppContent() {
 
               {/* GROUP LIST */}
               <div className="groups-list">
-                {groups.length === 0 ? (
+                <h3>Your Private Groups</h3>
+                {groups.filter(g => g.name !== "__NETWORK_SHARE__" && g.inviteCode !== "NETWORK").length === 0 ? (
                   <p className="empty">No groups yet.</p>
                 ) : (
-                  groups.map((g) => (
-                    <div key={g.id} className="group-item">
-                      <div>
-                        <strong>{g.name}</strong>
-                        <div className="small">{g.description || "No description"}</div>
-                        <div>Invite Code: <code>{g.inviteCode}</code></div>
+                  groups
+                    .filter(g => g.name !== "__NETWORK_SHARE__" && g.inviteCode !== "NETWORK")
+                    .map((g) => (
+                      <div key={g.id} className="group-item">
+                        <div>
+                          <strong>{g.name}</strong>
+                          <div className="small">{g.description || "No description"}</div>
+                          <div>Invite Code: <code>{g.inviteCode}</code></div>
+                        </div>
+                        <button onClick={() => selectGroup(g)}>Open →</button>
                       </div>
-                      <button onClick={() => selectGroup(g)}>Open →</button>
-                    </div>
-                  ))
+                    ))
                 )}
               </div>
             </>
@@ -589,8 +645,10 @@ function AppContent() {
           {/* FILES */}
           {view === "files" && selectedGroup && (
             <>
-              <h2>📁 {selectedGroup.name}</h2>
-              <p className="muted">{selectedGroup.memberCount} members</p>
+              <div className="files-header">
+                <h2>📁 {selectedGroup.name}</h2>
+                <p className="muted">🔒 All files encrypted • {selectedGroup.memberCount} members</p>
+              </div>
 
               {/* UPLOAD */}
               <div className="upload-row">
@@ -607,6 +665,45 @@ function AppContent() {
                   </button>
                 </form>
               </div>
+
+              {/* Connected devices for network share */}
+              {(selectedGroup.name === "__NETWORK_SHARE__" || selectedGroup.inviteCode === "NETWORK") && (
+                <div className="card glass-border" style={{ 
+                  marginBottom: "20px", 
+                  background: "#f0fdf4",
+                  borderColor: "#22c55e" 
+                }}>
+                  <h3 style={{ color: "#166534", marginBottom: "12px" }}>
+                    🌐 Connected Devices ({peers.length})
+                  </h3>
+                  {peers.length === 0 ? (
+                    <p style={{ color: "#166534", margin: 0 }}>
+                      No other devices online. Make sure other devices are running the app.
+                    </p>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px" }}>
+                      {peers.map((p, i) => (
+                        <div key={i} style={{
+                          background: "white",
+                          padding: "12px",
+                          borderRadius: "8px",
+                          border: "1px solid #86efac"
+                        }}>
+                          <div style={{ fontWeight: "600", color: "#166534" }}>
+                            💻 {p.name}
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#16a34a", marginTop: "4px" }}>
+                            {p.ip}
+                          </div>
+                          <div style={{ fontSize: "11px", color: "#4ade80", marginTop: "4px" }}>
+                            ● Online
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* FILE LIST */}
               <div className="files-list">
