@@ -50,7 +50,13 @@ function AppContent() {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [files, setFiles] = useState([]);
   const [peers, setPeers] = useState([]);
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState({
+    storageUsed: 0,
+    storageLimit: 5000000000,
+    fileCount: 0,
+    groupCount: 0,
+    peersOnline: 0
+  });
 
   // Form data
   const [groupName, setGroupName] = useState("");
@@ -68,6 +74,12 @@ function AppContent() {
   const [editProfile, setEditProfile] = useState(false);
   const [editUsername, setEditUsername] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  
+  // Settings
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsTheme, setSettingsTheme] = useState("light");
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [storageAlerts, setStorageAlerts] = useState(true);
 
   /** ======================
    *  AUTH CHECK + USER DATA
@@ -91,10 +103,11 @@ function AppContent() {
         fetchGroups();
         fetchPeers();
         if (selectedGroup) fetchFiles(selectedGroup.id);
+        if (view === "dashboard") fetchStats(); // Real-time dashboard updates
       }, 5000);
       return () => clearInterval(interval);
     }
-  }, [user, selectedGroup]);
+  }, [user, selectedGroup, view]);
 
   /** ======================
    *  BREADCRUMBS
@@ -104,7 +117,13 @@ function AppContent() {
 
     if (view === "dashboard") crumbs.push("Dashboard");
     else if (view === "groups") crumbs.push("Groups");
-    else if (view === "files" && selectedGroup) crumbs.push("Groups", selectedGroup.name);
+    else if (view === "files" && selectedGroup) {
+      if (selectedGroup.name === "__NETWORK_SHARE__" || selectedGroup.inviteCode === "NETWORK") {
+        crumbs.push("Network Share");
+      } else {
+        crumbs.push("Groups", selectedGroup.name);
+      }
+    }
     else if (view === "peers") crumbs.push("Network", "Peers");
     else if (view === "profile") crumbs.push("Profile");
 
@@ -125,17 +144,21 @@ function AppContent() {
     setUser(res.data);
     setEditUsername(res.data.username);
     setEditEmail(res.data.email);
+    setSettingsTheme(res.data.theme || "light");
+    setEmailNotifications(res.data.emailNotifications !== false);
+    setStorageAlerts(res.data.storageAlerts !== false);
     
     // Auto-join network group
     await API.post("/groups/join-network").catch(err => 
       console.log("Network group join:", err.response?.data)
     );
     
-    fetchGroups();
-    fetchPeers();
-    fetchStats();
+    // Fetch all data to populate UI
+    await fetchGroups();
+    await fetchPeers();
+    await fetchStats();
   } catch (err) {
-    console.error(err);
+    console.error("Fetch user error:", err);
     if (err.response?.status === 401 || err.response?.status === 403) {
       logout();
     }
@@ -146,8 +169,9 @@ function AppContent() {
     try {
       const res = await API.get("/groups");
       setGroups(res.data);
+      console.log('Groups fetched:', res.data.length);
     } catch (err) {
-      console.error(err);
+      console.error('Fetch groups error:', err.response?.data || err.message);
     }
   };
 
@@ -155,8 +179,9 @@ function AppContent() {
     try {
       const res = await API.get(`/files/group/${groupId}`);
       setFiles(res.data);
+      console.log('Files fetched for group:', groupId, res.data.length);
     } catch (err) {
-      console.error(err);
+      console.error('Fetch files error:', err.response?.data || err.message);
     }
   };
 
@@ -164,8 +189,9 @@ function AppContent() {
     try {
       const res = await API.get("/peers");
       setPeers(res.data);
+      console.log('Peers fetched:', res.data.length);
     } catch (err) {
-      console.error(err);
+      console.error('Fetch peers error:', err.response?.data || err.message);
     }
   };
 
@@ -173,8 +199,9 @@ function AppContent() {
     try {
       const res = await API.get("/stats/dashboard");
       setStats(res.data);
+      console.log('Stats fetched:', res.data);
     } catch (err) {
-      console.error(err);
+      console.error('Fetch stats error:', err.response?.data || err.message);
     }
   };
 
@@ -233,6 +260,41 @@ function AppContent() {
     setLoading(false);
   };
 
+  const updateSettings = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      await API.patch("/auth/settings", {
+        theme: settingsTheme,
+        emailNotifications: emailNotifications,
+        storageAlerts: storageAlerts,
+      });
+
+      await fetchUser();
+      notify("Settings updated!");
+      setShowSettings(false);
+    } catch (err) {
+      notify("Failed to update settings", "error");
+    }
+    setLoading(false);
+  };
+
+  const connectToPeer = async (peerId, peerName) => {
+    setLoading(true);
+    try {
+      const res = await API.post("/peers/connect", { peerId });
+      notify(`Connected to ${peerName}!`);
+      console.log("Peer connection:", res.data);
+      // Refresh peers after connection
+      fetchPeers();
+    } catch (err) {
+      console.error("Peer connect error:", err);
+      notify(err.response?.data?.error || "Failed to connect to peer", "error");
+    }
+    setLoading(false);
+  };
+
   /** ======================
    *  GROUPS
    ======================== */
@@ -250,9 +312,12 @@ function AppContent() {
       setGroupName("");
       setGroupDesc("");
       setGroupPrivacy(true);
-      fetchGroups();
+      // Fetch groups and stats to update UI immediately
+      await fetchGroups();
+      await fetchStats();
     } catch (err) {
-      notify("Failed to create group", "error");
+      console.error("Create group error:", err);
+      notify(err.response?.data?.error || "Failed to create group", "error");
     }
     setLoading(false);
   };
@@ -264,9 +329,12 @@ function AppContent() {
       await API.post("/groups/join", { inviteCode });
       notify("Joined group!");
       setInviteCode("");
-      fetchGroups();
+      // Fetch groups and stats to update UI immediately
+      await fetchGroups();
+      await fetchStats();
     } catch (err) {
-      notify("Invalid invite code", "error");
+      console.error("Join group error:", err);
+      notify(err.response?.data?.error || "Invalid invite code", "error");
     }
     setLoading(false);
   };
@@ -288,7 +356,8 @@ function AppContent() {
       });
       notify("Group updated!");
       setEditingGroup(null);
-      fetchGroups();
+      await fetchGroups();
+      await fetchStats();
     } catch (err) {
       notify(err.response?.data?.error || "Failed to update group", "error");
     }
@@ -308,8 +377,8 @@ function AppContent() {
         setSelectedGroup(null);
         setView("groups");
       }
-      fetchGroups();
-      fetchStats();
+      await fetchGroups();
+      await fetchStats();
     } catch (err) {
       notify(err.response?.data?.error || "Failed to delete group", "error");
     }
@@ -330,15 +399,18 @@ function AppContent() {
     
     setLoading(true);
     try {
-      await API.post(`/groups/${groupId}/leave`);
+      const response = await API.post(`/groups/${groupId}/leave`);
+      console.log('Leave group response:', response.data);
       notify("Left group successfully");
       if (selectedGroup?.id === groupId) {
         setSelectedGroup(null);
         setView("groups");
       }
-      fetchGroups();
-      fetchStats();
+      await fetchGroups();
+      await fetchStats();
     } catch (err) {
+      console.error('Leave group error:', err);
+      console.error('Error response:', err.response?.data);
       notify(err.response?.data?.error || "Failed to leave group", "error");
     }
     setLoading(false);
@@ -362,8 +434,8 @@ function AppContent() {
       notify("File uploaded!");
       setUploadFile(null);
       setTags("");
-      fetchFiles(selectedGroup.id);
-      fetchStats();
+      await fetchFiles(selectedGroup.id);
+      await fetchStats();
     } catch (err) {
       notify("Upload failed", "error");
     }
@@ -390,8 +462,8 @@ function AppContent() {
     try {
       await API.delete(`/files/${id}`);
       notify("File deleted");
-      fetchFiles(selectedGroup.id);
-      fetchStats();
+      await fetchFiles(selectedGroup.id);
+      await fetchStats();
     } catch {
       notify("Delete failed", "error");
     }
@@ -400,11 +472,21 @@ function AppContent() {
   /** ======================
    *  FORMAT HELPERS
    ======================== */
-  const formatSize = (b) => {
-    if (b === null || b === undefined) return "0B";
-    if (b < 1024) return `${b}B`;
-    return `${(b / 1024).toFixed(1)}KB`;
+  const formatSize = (bytes) => {
+    if (bytes === null || bytes === undefined || bytes === 0) return "0 MB";
+    const mb = bytes / (1024 * 1024);
+    const gb = bytes / (1024 * 1024 * 1024);
+    
+    if (gb >= 1) {
+      return `${gb.toFixed(2)} GB`;
+    } else if (mb >= 1) {
+      return `${mb.toFixed(2)} MB`;
+    } else if (bytes >= 1024) {
+      return `${(bytes / 1024).toFixed(2)} KB`;
+    }
+    return `${bytes} B`;
   };
+  
   const formatDate = (d) => new Date(d).toLocaleString();
 
   const storagePercent = stats
@@ -482,6 +564,7 @@ function AppContent() {
         toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         onLogout={logout}
         onProfileClick={() => setView("profile")}
+        onSettingsClick={() => setShowSettings(true)}
       />
 
       <div className="app-body">
@@ -503,7 +586,27 @@ function AppContent() {
             <span className="count-badge">{peers.length}</span>
           </button>
 
-          {selectedGroup && (
+          <div className="sidebar-title" style={{ marginTop: 20 }}>
+            NETWORK SHARING
+          </div>
+
+          <button 
+            className={selectedGroup?.name === "__NETWORK_SHARE__" && view === "files" ? "active network-share-btn" : "network-share-btn"}
+            onClick={() => {
+              const networkGroup = groups.find(g => g.name === "__NETWORK_SHARE__" || g.inviteCode === "NETWORK");
+              if (networkGroup) {
+                selectGroup(networkGroup);
+              } else {
+                notify("Network Share not available. Please wait...", "info");
+                fetchGroups();
+              }
+            }}
+          >
+            <span>🌐 Network Share</span>
+            <span className="count-badge">{peers.length}</span>
+          </button>
+
+          {selectedGroup && selectedGroup.name !== "__NETWORK_SHARE__" && (
             <>
               <div className="sidebar-title" style={{ marginTop: 20 }}>
                 CURRENT GROUP
@@ -551,10 +654,10 @@ function AppContent() {
           </div>
 
           {/* DASHBOARD */}
-          {view === "dashboard" && stats && (
+          {view === "dashboard" && (
             <>
               <h1 className="page-title">Dashboard</h1>
-              <p className="muted">Overview of your usage</p>
+              <p className="muted">Real-time overview of your usage • Updates every 5 seconds</p>
 
               {/* STORAGE BAR */}
               <div className="storage-bar-container">
@@ -575,42 +678,81 @@ function AppContent() {
 
               {/* STATS GRID */}
               <div className="stats-grid">
-                <div className="stat-box"><h3>Groups</h3><p>{stats.groupCount}</p></div>
-                <div className="stat-box"><h3>Files</h3><p>{stats.fileCount}</p></div>
-                <div className="stat-box"><h3>Peers Online</h3><p>{stats.peersOnline}</p></div>
                 <div className="stat-box">
-                  <h3>Recent Transfers</h3>
-                  <p>{stats.recentTransfers?.length || 0}</p>
+                  <h3>Groups</h3>
+                  <p className="stat-number">{stats.groupCount || 0}</p>
+                  <small className="stat-label">Active groups you're in</small>
+                </div>
+                <div className="stat-box">
+                  <h3>Files</h3>
+                  <p className="stat-number">{stats.fileCount || 0}</p>
+                  <small className="stat-label">Files you've uploaded</small>
+                </div>
+                <div className="stat-box">
+                  <h3>Peers Online</h3>
+                  <p className="stat-number">{stats.peersOnline || 0}</p>
+                  <small className="stat-label">Devices on your network</small>
+                </div>
+                <div className="stat-box">
+                  <h3>Storage Available</h3>
+                  <p className="stat-number">{formatSize((stats.storageLimit || 0) - (stats.storageUsed || 0))}</p>
+                  <small className="stat-label">Free space remaining</small>
                 </div>
               </div>
 
-              {/* RECENT ACTIVITY */}
-              {stats.recentTransfers?.length > 0 && (
-                <div className="card">
-                  <h3>Recent Activity</h3>
-                  <div className="activity-list">
-                    {stats.recentTransfers.slice(0, 5).map((t, i) => (
-                      <div key={i} className="activity-item">
-                        <span className="activity-icon">
-                          {t.action === "upload"
-                            ? "📤"
-                            : t.action === "download"
-                            ? "📥"
-                            : "🗑️"}
-                        </span>
-                        <div className="activity-info">
-                          <div className="activity-name">
-                            {t.action} - {t.fileId?.originalName || "Unknown"}
-                          </div>
-                          <div className="activity-meta">
-                            {t.groupId?.name} • {formatDate(t.timestamp)}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+              {/* QUICK ACTIONS */}
+              <div className="card" style={{ marginTop: "24px" }}>
+                <h3>⚡ Quick Actions</h3>
+                <div className="quick-actions">
+                  <button 
+                    className="quick-action-btn"
+                    onClick={() => setView("groups")}
+                  >
+                    <span className="action-icon">➕</span>
+                    <div>
+                      <strong>Create Group</strong>
+                      <small>Start sharing files</small>
+                    </div>
+                  </button>
+                  <button 
+                    className="quick-action-btn"
+                    onClick={() => setView("peers")}
+                  >
+                    <span className="action-icon">🌐</span>
+                    <div>
+                      <strong>View Peers</strong>
+                      <small>{peers.length} device{peers.length !== 1 ? 's' : ''} online</small>
+                    </div>
+                  </button>
+                  <button 
+                    className="quick-action-btn"
+                    onClick={() => {
+                      const networkGroup = groups.find(g => g.name === "__NETWORK_SHARE__" || g.inviteCode === "NETWORK");
+                      if (networkGroup) {
+                        selectGroup(networkGroup);
+                      } else {
+                        notify("Network group not found", "error");
+                      }
+                    }}
+                  >
+                    <span className="action-icon">📁</span>
+                    <div>
+                      <strong>Network Share</strong>
+                      <small>Share with all peers</small>
+                    </div>
+                  </button>
+                  <button 
+                    className="quick-action-btn"
+                    onClick={() => fetchStats()}
+                  >
+                    <span className="action-icon">🔄</span>
+                    <div>
+                      <strong>Refresh Stats</strong>
+                      <small>Update dashboard</small>
+                    </div>
+                  </button>
                 </div>
-              )}
+              </div>
             </>
           )}
 
@@ -806,10 +948,20 @@ function AppContent() {
           {/* FILES */}
           {view === "files" && selectedGroup && (
             <>
-              <div className="files-header">
-                <h2>📁 {selectedGroup.name}</h2>
-                <p className="muted">🔒 All files encrypted • {selectedGroup.memberCount} members</p>
-              </div>
+              {/* Special Header for Network Share */}
+              {(selectedGroup.name === "__NETWORK_SHARE__" || selectedGroup.inviteCode === "NETWORK") ? (
+                <div className="files-header network-share-header">
+                  <h2>🌐 Network Share</h2>
+                  <p className="muted">
+                    🔒 End-to-end encrypted • Share files instantly with {peers.length} device{peers.length !== 1 ? 's' : ''} on your network
+                  </p>
+                </div>
+              ) : (
+                <div className="files-header">
+                  <h2>📁 {selectedGroup.name}</h2>
+                  <p className="muted">🔒 All files encrypted • {selectedGroup.memberCount} members</p>
+                </div>
+              )}
 
               {/* UPLOAD */}
               <div className="upload-row">
@@ -902,36 +1054,63 @@ function AppContent() {
           {view === "peers" && (
             <>
               <h1 className="page-title">Network Peers</h1>
-              <p className="muted">Devices on same network</p>
+              <p className="muted">Discover and connect with devices on your local network</p>
 
-              <button onClick={fetchPeers} className="refresh-btn">🔄 Refresh</button>
+              <button onClick={fetchPeers} className="refresh-btn">🔄 Refresh Peers</button>
 
-              {/* SIMPLE CONNECTION INSTRUCTIONS (OPTION B) */}
+              {/* PEER CONNECTION STATUS */}
+              <div className="card" style={{ marginTop: "20px", background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", color: "white", border: "none" }}>
+                <h3 style={{ color: "white" }}>🌐 Peer Discovery Active</h3>
+                <p style={{ opacity: 0.9, marginTop: "8px" }}>
+                  {peers.length} device{peers.length !== 1 ? 's' : ''} found on your network
+                </p>
+              </div>
+
+              {/* CONNECTION INSTRUCTIONS */}
               <div className="card" style={{ marginTop: "20px" }}>
-                <h3>🌐 How to Connect Devices</h3>
+                <h3>📡 How to Connect Devices</h3>
                 <ol style={{ marginLeft: "20px", marginTop: "12px", lineHeight: "1.8" }}>
                   <li>Ensure all devices are on the <strong>same WiFi network</strong></li>
                   <li>Run backend & frontend on each device</li>
                   <li>Wait 5–10 seconds for automatic peer discovery</li>
-                  <li>Peers will appear below automatically</li>
-                  <li>Share the group invite code to collaborate</li>
+                  <li>Click "Connect" to establish direct connection</li>
+                  <li>Share files through Network Share group or invite to private groups</li>
                 </ol>
               </div>
 
+              <h3 style={{ marginTop: "24px" }}>Available Peers</h3>
               <div className="peers-grid">
                 {peers.length === 0 ? (
                   <div className="card">
-                    <p className="empty">No peers detected.</p>
+                    <p className="empty">No peers detected. Make sure other devices are running DeCloud.</p>
                   </div>
                 ) : (
                   peers.map((p, i) => (
-                    <div key={i} className="peer-card">
-                      <div className="peer-name">💻 {p.name}</div>
-                      <div className="peer-ip">
-                        {p.ip}:{p.port}
+                    <div key={i} className="peer-card card">
+                      <div className="peer-header">
+                        <div className="peer-name">💻 {p.name}</div>
+                        <span className="peer-status online">● Online</span>
                       </div>
-                      <div className="peer-meta">Last seen: {formatDate(p.lastSeen)}</div>
-                      <button className="glass-btn">Connect</button>
+                      <div className="peer-ip">
+                        📍 {p.ip}:{p.port}
+                      </div>
+                      <div className="peer-meta">
+                        Last seen: {formatDate(p.lastSeen)}
+                      </div>
+                      <div className="peer-actions">
+                        <button 
+                          className="btn-primary" 
+                          onClick={() => connectToPeer(p.id || `${p.ip}:${p.port}`, p.name)}
+                        >
+                          🔗 Connect
+                        </button>
+                        <button 
+                          className="btn-secondary" 
+                          onClick={() => window.open(`http://${p.ip}:${p.port}`, "_blank")}
+                        >
+                          🌐 Open
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -989,6 +1168,77 @@ function AppContent() {
 
       <Footer />
       <CookieBanner user={user} />
+
+      {/* SETTINGS MODAL */}
+      {showSettings && (
+        <div className="modal-overlay" onClick={() => setShowSettings(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>⚙️ Settings</h3>
+            <form onSubmit={updateSettings}>
+              <div className="settings-section">
+                <h4>Appearance</h4>
+                <div className="setting-item">
+                  <label>
+                    <span>Theme</span>
+                    <select 
+                      value={settingsTheme} 
+                      onChange={(e) => setSettingsTheme(e.target.value)}
+                    >
+                      <option value="light">☀️ Light</option>
+                      <option value="dark">🌙 Dark</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div className="settings-section">
+                <h4>Notifications</h4>
+                <div className="setting-item">
+                  <label className="toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={emailNotifications}
+                      onChange={(e) => setEmailNotifications(e.target.checked)}
+                    />
+                    <span>📧 Email Notifications</span>
+                  </label>
+                  <small className="muted">Receive email updates about file activities</small>
+                </div>
+                
+                <div className="setting-item">
+                  <label className="toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={storageAlerts}
+                      onChange={(e) => setStorageAlerts(e.target.checked)}
+                    />
+                    <span>⚠️ Storage Alerts</span>
+                  </label>
+                  <small className="muted">Get notified when storage is running low</small>
+                </div>
+              </div>
+
+              <div className="settings-section">
+                <h4>Storage Information</h4>
+                <div className="setting-item">
+                  <p><strong>Used:</strong> {formatSize(user?.storageUsed)}</p>
+                  <p><strong>Total:</strong> {formatSize(user?.storageLimit)}</p>
+                  <p><strong>Available:</strong> {formatSize((user?.storageLimit || 0) - (user?.storageUsed || 0))}</p>
+                </div>
+              </div>
+
+              <div className="modal-actions">
+                <button type="submit" disabled={loading} className="btn-primary">
+                  Save Settings
+                </button>
+                <button type="button" onClick={() => setShowSettings(false)} className="btn-secondary">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {notification && (
         <div className={`notification ${notification.type}`}>{notification.msg}</div>

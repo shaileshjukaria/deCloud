@@ -7,6 +7,7 @@ export default function Navbar({
   toggleSidebar,
   onLogout,
   onProfileClick,
+  onSettingsClick,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -74,12 +75,18 @@ export default function Navbar({
                   <span>👤</span> My Profile
                 </button>
 
-                <button className="dropdown-item">
+                <button 
+                  className="dropdown-item"
+                  onClick={() => {
+                    onSettingsClick();
+                    setMenuOpen(false);
+                  }}
+                >
                   <span>⚙️</span> Settings
                 </button>
 
-                <button className="dropdown-item">
-                  <span>📊</span> Storage: {Math.round((user?.storageUsed || 0) / 1024 / 1024)}MB
+                <button className="dropdown-item" disabled>
+                  <span>📊</span> Storage: {((user?.storageUsed || 0) / (1024 * 1024)).toFixed(2)} MB
                 </button>
 
                 <button className="dropdown-item">

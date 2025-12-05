@@ -87,6 +87,8 @@ const User = mongoose.model(
         password: String,
         theme: { type: String, default: "light" },
         cookiesAccepted: { type: Boolean, default: false },
+        emailNotifications: { type: Boolean, default: true },
+        storageAlerts: { type: Boolean, default: true },
         storageUsed: { type: Number, default: 0 },
         storageLimit: { type: Number, default: 5000000000 },
         groups: [{ type: mongoose.Schema.Types.ObjectId, ref: "Group" }],
@@ -208,6 +210,7 @@ udpServer.on("message", async (msg, rinfo) => {
             const peerKey = `${rinfo.address}:${data.port}`;
 
             discoveredPeers.set(peerKey, {
+                id: peerKey, // Add id field for frontend
                 name: data.name || rinfo.address,
                 ip: rinfo.address,
                 port: data.port,
@@ -415,21 +418,31 @@ app.use((err, req, res, next) => {
 
 // ====================== GROUP ROUTES ======================
 app.post("/api/groups/create", auth, async (req, res) => {
-    const { name, description, isPrivate = true } = req.body;
+    try {
+        const { name, description, isPrivate = true } = req.body;
 
-    const encryptionKey = crypto.randomBytes(32).toString("hex");
+        const encryptionKey = crypto.randomBytes(32).toString("hex");
 
-    const group = await Group.create({
-        name,
-        description,
-        creator: req.user.userId,
-        encryptionKey,
-        inviteCode: crypto.randomBytes(3).toString("hex").toUpperCase(),
-        isPrivate,
-        members: [{ userId: req.user.userId, role: "admin" }]
-    });
+        const group = await Group.create({
+            name,
+            description,
+            creator: req.user.userId,
+            encryptionKey,
+            inviteCode: crypto.randomBytes(3).toString("hex").toUpperCase(),
+            isPrivate,
+            members: [{ userId: req.user.userId, role: "admin" }]
+        });
 
-    res.json(group);
+        // Add group to user's groups array
+        await User.findByIdAndUpdate(req.user.userId, {
+            $addToSet: { groups: group._id }
+        });
+
+        res.json(group);
+    } catch (err) {
+        console.error("Create group error:", err);
+        res.status(500).json({ error: "Failed to create group" });
+    }
 });
 
 app.get("/api/groups", auth, async (req, res) => {
@@ -564,14 +577,16 @@ app.post("/api/groups/:id/leave", auth, async (req, res) => {
     
     // Remove user from group members
     group.members.splice(memberIndex, 1);
-    await group.save();
     
     // Remove group from user's groups
     await User.findByIdAndUpdate(req.user.userId, {
       $pull: { groups: req.params.id }
     });
     
-    // If creator left and was the only member, delete the group
+    // Save group changes
+    await group.save();
+    
+    // If group is now empty, delete it
     if (group.members.length === 0) {
       // Delete all files in this group
       const files = await File.find({ group: req.params.id });
@@ -580,6 +595,10 @@ app.post("/api/groups/:id/leave", auth, async (req, res) => {
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
         }
+        // Update user storage
+        await User.findByIdAndUpdate(file.owner, {
+          $inc: { storageUsed: -file.size }
+        });
       }
       await File.deleteMany({ group: req.params.id });
       await Group.findByIdAndDelete(req.params.id);
@@ -588,7 +607,7 @@ app.post("/api/groups/:id/leave", auth, async (req, res) => {
     res.json({ success: true, message: "Left group successfully" });
   } catch (err) {
     console.error("Leave group error:", err);
-    res.status(500).json({ error: "Failed to leave group" });
+    res.status(500).json({ error: "Failed to leave group", details: err.message });
   }
 });
 
@@ -795,24 +814,68 @@ app.post("/api/groups/join", auth, async (req, res) => {
   }
 });
 
+// ====================== USER SETTINGS ======================
+app.patch("/api/auth/settings", auth, async (req, res) => {
+    try {
+        const { theme, emailNotifications, storageAlerts } = req.body;
+        const user = await User.findById(req.user.userId);
+        
+        if (theme !== undefined) user.theme = theme;
+        if (emailNotifications !== undefined) user.emailNotifications = emailNotifications;
+        if (storageAlerts !== undefined) user.storageAlerts = storageAlerts;
+        
+        await user.save();
+        res.json({ success: true, user });
+    } catch (err) {
+        console.error('Settings update error:', err);
+        res.status(500).json({ error: 'Failed to update settings' });
+    }
+});
+
 // ====================== PEERS ======================
 app.get("/api/peers", auth, async (req, res) => {
     res.json([...discoveredPeers.values()]);
 });
 
+// Connect to peer
+app.post("/api/peers/connect", auth, async (req, res) => {
+    try {
+        const { peerId } = req.body;
+        const peer = discoveredPeers.get(peerId);
+        
+        if (!peer) {
+            return res.status(404).json({ error: 'Peer not found or offline' });
+        }
+        
+        res.json({
+            success: true,
+            peer: peer,
+            message: `Connected to ${peer.name || peer.ip}`
+        });
+    } catch (err) {
+        console.error('Peer connect error:', err);
+        res.status(500).json({ error: 'Failed to connect to peer' });
+    }
+});
+
 // ====================== STATS ======================
 app.get("/api/stats/dashboard", auth, async (req, res) => {
-    const user = await User.findById(req.user.userId);
-    const files = await File.countDocuments({ owner: req.user.userId });
-    const groups = await Group.countDocuments({ "members.userId": req.user.userId });
+    try {
+        const user = await User.findById(req.user.userId);
+        const files = await File.countDocuments({ owner: req.user.userId });
+        const groups = await Group.countDocuments({ "members.userId": req.user.userId });
 
-    res.json({
-        storageUsed: user.storageUsed,
-        storageLimit: user.storageLimit,
-        fileCount: files,
-        groupCount: groups,
-        peersOnline: discoveredPeers.size
-    });
+        res.json({
+            storageUsed: user.storageUsed,
+            storageLimit: user.storageLimit,
+            fileCount: files,
+            groupCount: groups,
+            peersOnline: discoveredPeers.size
+        });
+    } catch (err) {
+        console.error('Dashboard stats error:', err);
+        res.status(500).json({ error: 'Failed to fetch stats' });
+    }
 });
 
 // ====================== SERVER ======================
