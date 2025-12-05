@@ -42,6 +42,7 @@ if (NODE_ENV === 'development') {
     allowedHeaders: ['Content-Type', 'Authorization']
   }));
 } else {
+  
   app.use(cors({
     origin: function(origin, callback) {
       if (!origin) return callback(null, true);
@@ -106,6 +107,7 @@ const Group = mongoose.model(
         }],
         encryptionKey: String,
         inviteCode: String,
+        isPrivate: { type: Boolean, default: true },
         createdAt: { type: Date, default: Date.now }
     })
 );
@@ -193,60 +195,84 @@ const LOCAL_IP = getLocalIP();
 // ====================== PEER DISCOVERY (FIXED) ======================
 let discoveredPeers = new Map();
 
-if (ENABLE_PEER_DISCOVERY) {
-    const udpServer = dgram.createSocket("udp4");
+// Always enable peer discovery for local network sharing
+const udpServer = dgram.createSocket("udp4");
 
-    udpServer.on("message", async (msg, rinfo) => {
-        try {
-            const data = JSON.parse(msg.toString());
+udpServer.on("message", async (msg, rinfo) => {
+    try {
+        const data = JSON.parse(msg.toString());
 
-            // FIX: skip system messages
-            if (data.userId === "system") return;
+        // Skip our own announcements
+        if (rinfo.address === LOCAL_IP) return;
 
-            if (data.type === "PEER_ANNOUNCE" && rinfo.address !== LOCAL_IP) {
-                const peerKey = `${rinfo.address}:${data.port}`;
+        if (data.type === "PEER_ANNOUNCE") {
+            const peerKey = `${rinfo.address}:${data.port}`;
 
-                discoveredPeers.set(peerKey, {
-                    name: data.name,
-                    ip: rinfo.address,
-                    port: data.port,
-                    lastSeen: new Date()
-                });
-
-                await Peer.findOneAndUpdate(
-                    { peerId: peerKey },
-                    {
-                        peerId: peerKey,
-                        name: data.name,
-                        ip: rinfo.address,
-                        port: data.port,
-                        isOnline: true,
-                        lastSeen: new Date()
-                    },
-                    { upsert: true }
-                );
-            }
-        } catch (err) {
-            console.log("Invalid peer message:", msg.toString());
-        }
-    });
-
-    udpServer.bind(PEER_PORT, () => {
-        udpServer.setBroadcast(true);
-        console.log(`🔍 Peer discovery active (UDP ${PEER_PORT})`);
-
-        setInterval(() => {
-            const msg = JSON.stringify({
-                type: "PEER_ANNOUNCE",
-                name: os.hostname(),
-                port: PORT,
-                userId: "system"  // ignored, not saved
+            discoveredPeers.set(peerKey, {
+                name: data.name || rinfo.address,
+                ip: rinfo.address,
+                port: data.port,
+                lastSeen: new Date()
             });
 
-            udpServer.send(msg, PEER_PORT, "255.255.255.255", () => {});
-        }, 5000);
-    });
-}
+            console.log(`📡 Discovered peer: ${data.name || rinfo.address} at ${rinfo.address}:${data.port}`);
+
+            await Peer.findOneAndUpdate(
+                { peerId: peerKey },
+                {
+                    peerId: peerKey,
+                    name: data.name || rinfo.address,
+                    ip: rinfo.address,
+                    port: data.port,
+                    isOnline: true,
+                    lastSeen: new Date()
+                },
+                { upsert: true }
+            );
+        }
+    } catch (err) {
+        console.log("Invalid peer message:", msg.toString());
+    }
+});
+
+udpServer.on("error", (err) => {
+    console.error("UDP server error:", err);
+});
+
+udpServer.bind(PEER_PORT, "0.0.0.0", () => {
+    udpServer.setBroadcast(true);
+    console.log(`🔍 Peer discovery active on UDP port ${PEER_PORT}`);
+    console.log(`📡 Broadcasting as: ${os.hostname()}`);
+
+    // Broadcast our presence every 5 seconds
+    setInterval(() => {
+        const msg = JSON.stringify({
+            type: "PEER_ANNOUNCE",
+            name: os.hostname(),
+            port: PORT
+        });
+
+        udpServer.send(msg, PEER_PORT, "255.255.255.255", (err) => {
+            if (err) console.error("Broadcast error:", err);
+        });
+    }, 5000);
+
+    // Clean up stale peers every 30 seconds
+    setInterval(() => {
+        const now = Date.now();
+        for (const [key, peer] of discoveredPeers.entries()) {
+            if (now - peer.lastSeen.getTime() > 30000) {
+                console.log(`🔌 Peer offline: ${peer.name}`);
+                discoveredPeers.delete(key);
+                Peer.findOneAndUpdate(
+                    { peerId: key },
+                    { isOnline: false },
+                    { upsert: false }
+                ).catch(err => console.error("Peer update error:", err));
+            }
+        }
+    }, 30000);
+});
 
 
 
@@ -390,7 +416,7 @@ app.use((err, req, res, next) => {
 
 // ====================== GROUP ROUTES ======================
 app.post("/api/groups/create", auth, async (req, res) => {
-    const { name, description } = req.body;
+    const { name, description, isPrivate = true } = req.body;
 
     const encryptionKey = crypto.randomBytes(32).toString("hex");
 
@@ -400,6 +426,7 @@ app.post("/api/groups/create", auth, async (req, res) => {
         creator: req.user.userId,
         encryptionKey,
         inviteCode: crypto.randomBytes(3).toString("hex").toUpperCase(),
+        isPrivate,
         members: [{ userId: req.user.userId, role: "admin" }]
     });
 
@@ -419,6 +446,9 @@ app.get("/api/groups", auth, async (req, res) => {
       name: g.name,
       description: g.description,
       inviteCode: g.inviteCode,
+      isPrivate: g.isPrivate,
+      creator: g.creator,
+      isCreator: g.creator._id.toString() === req.user.userId,
       memberCount: g.members.length,
       createdAt: g.createdAt
     }));
@@ -427,6 +457,139 @@ app.get("/api/groups", auth, async (req, res) => {
   } catch (err) {
     console.error("Get groups error:", err);
     res.status(500).json({ error: "Failed to fetch groups" });
+  }
+});
+
+// Update group settings
+app.patch("/api/groups/:id", auth, async (req, res) => {
+  try {
+    const { name, description, isPrivate } = req.body;
+    const group = await Group.findById(req.params.id);
+    
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    
+    // Check if user is creator or admin
+    const member = group.members.find(m => m.userId.toString() === req.user.userId);
+    if (!member || (member.role !== "admin" && group.creator.toString() !== req.user.userId)) {
+      return res.status(403).json({ error: "Not authorized to edit this group" });
+    }
+    
+    // Don't allow editing network share group
+    if (group.name === "__NETWORK_SHARE__" || group.inviteCode === "NETWORK") {
+      return res.status(403).json({ error: "Cannot edit network share group" });
+    }
+    
+    if (name) group.name = name;
+    if (description !== undefined) group.description = description;
+    if (isPrivate !== undefined) group.isPrivate = isPrivate;
+    
+    await group.save();
+    res.json({ success: true, group });
+  } catch (err) {
+    console.error("Update group error:", err);
+    res.status(500).json({ error: "Failed to update group" });
+  }
+});
+
+// Delete group
+app.delete("/api/groups/:id", auth, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+    
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    
+    // Check if user is creator
+    if (group.creator.toString() !== req.user.userId) {
+      return res.status(403).json({ error: "Only the creator can delete this group" });
+    }
+    
+    // Don't allow deleting network share group
+    if (group.name === "__NETWORK_SHARE__" || group.inviteCode === "NETWORK") {
+      return res.status(403).json({ error: "Cannot delete network share group" });
+    }
+    
+    // Delete all files in this group
+    const files = await File.find({ group: req.params.id });
+    for (const file of files) {
+      const filePath = path.join(__dirname, "uploads", file.filename);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      
+      // Update user storage
+      await User.findByIdAndUpdate(file.owner, {
+        $inc: { storageUsed: -file.size }
+      });
+    }
+    
+    await File.deleteMany({ group: req.params.id });
+    
+    // Remove group from all users
+    await User.updateMany(
+      { groups: req.params.id },
+      { $pull: { groups: req.params.id } }
+    );
+    
+    // Delete the group
+    await Group.findByIdAndDelete(req.params.id);
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete group error:", err);
+    res.status(500).json({ error: "Failed to delete group" });
+  }
+});
+
+// Leave group
+app.post("/api/groups/:id/leave", auth, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+    
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    
+    // Don't allow leaving network share group
+    if (group.name === "__NETWORK_SHARE__" || group.inviteCode === "NETWORK") {
+      return res.status(403).json({ error: "Cannot leave network share group" });
+    }
+    
+    // Check if user is a member
+    const memberIndex = group.members.findIndex(m => m.userId.toString() === req.user.userId);
+    if (memberIndex === -1) {
+      return res.status(400).json({ error: "You are not a member of this group" });
+    }
+    
+    // Don't allow creator to leave if there are other members
+    if (group.creator.toString() === req.user.userId && group.members.length > 1) {
+      return res.status(403).json({ error: "Creator cannot leave group with other members. Delete the group or transfer ownership first." });
+    }
+    
+    // Remove user from group members
+    group.members.splice(memberIndex, 1);
+    await group.save();
+    
+    // Remove group from user's groups
+    await User.findByIdAndUpdate(req.user.userId, {
+      $pull: { groups: req.params.id }
+    });
+    
+    // If creator left and was the only member, delete the group
+    if (group.members.length === 0) {
+      // Delete all files in this group
+      const files = await File.find({ group: req.params.id });
+      for (const file of files) {
+        const filePath = path.join(__dirname, "uploads", file.filename);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+      await File.deleteMany({ group: req.params.id });
+      await Group.findByIdAndDelete(req.params.id);
+    }
+    
+    res.json({ success: true, message: "Left group successfully" });
+  } catch (err) {
+    console.error("Leave group error:", err);
+    res.status(500).json({ error: "Failed to leave group" });
   }
 });
 

@@ -55,9 +55,14 @@ function AppContent() {
   // Form data
   const [groupName, setGroupName] = useState("");
   const [groupDesc, setGroupDesc] = useState("");
+  const [groupPrivacy, setGroupPrivacy] = useState(true);
   const [inviteCode, setInviteCode] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
   const [tags, setTags] = useState("");
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [editGroupName, setEditGroupName] = useState("");
+  const [editGroupDesc, setEditGroupDesc] = useState("");
+  const [editGroupPrivacy, setEditGroupPrivacy] = useState(true);
 
   // Profile
   const [editProfile, setEditProfile] = useState(false);
@@ -238,11 +243,13 @@ function AppContent() {
       const res = await API.post("/groups/create", {
         name: groupName,
         description: groupDesc,
+        isPrivate: groupPrivacy,
       });
       // server returns the created group object directly
       notify(`Group Created! Code: ${res.data.inviteCode}`);
       setGroupName("");
       setGroupDesc("");
+      setGroupPrivacy(true);
       fetchGroups();
     } catch (err) {
       notify("Failed to create group", "error");
@@ -268,6 +275,52 @@ function AppContent() {
     setSelectedGroup(group);
     setView("files");
     fetchFiles(group.id);
+  };
+
+  const updateGroup = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await API.patch(`/groups/${editingGroup.id}`, {
+        name: editGroupName,
+        description: editGroupDesc,
+        isPrivate: editGroupPrivacy,
+      });
+      notify("Group updated!");
+      setEditingGroup(null);
+      fetchGroups();
+    } catch (err) {
+      notify(err.response?.data?.error || "Failed to update group", "error");
+    }
+    setLoading(false);
+  };
+
+  const deleteGroup = async (groupId, groupName) => {
+    if (!window.confirm(`Delete group "${groupName}"? All files will be permanently deleted.`)) {
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      await API.delete(`/groups/${groupId}`);
+      notify("Group deleted");
+      if (selectedGroup?.id === groupId) {
+        setSelectedGroup(null);
+        setView("groups");
+      }
+      fetchGroups();
+      fetchStats();
+    } catch (err) {
+      notify(err.response?.data?.error || "Failed to delete group", "error");
+    }
+    setLoading(false);
+  };
+
+  const startEditGroup = (group) => {
+    setEditingGroup(group);
+    setEditGroupName(group.name);
+    setEditGroupDesc(group.description || "");
+    setEditGroupPrivacy(group.isPrivate !== false);
   };
 
   /** ======================
@@ -416,15 +469,17 @@ function AppContent() {
           <div className="sidebar-title">NAVIGATION</div>
 
           <button className={view === "dashboard" ? "active" : ""} onClick={() => setView("dashboard")}>
-            📊 Dashboard
+            <span>📊 Dashboard</span>
           </button>
 
           <button className={view === "groups" ? "active" : ""} onClick={() => setView("groups")}>
-            👥 Groups ({groups.length})
+            <span>👥 Groups</span>
+            <span className="count-badge">{groups.length}</span>
           </button>
 
           <button className={view === "peers" ? "active" : ""} onClick={() => setView("peers")}>
-            💻 Peers ({peers.length})
+            <span>💻 Peers</span>
+            <span className="count-badge">{peers.length}</span>
           </button>
 
           {selectedGroup && (
@@ -434,7 +489,7 @@ function AppContent() {
               </div>
 
               <button className={view === "files" ? "active" : ""} onClick={() => setView("files")}>
-                📁 {selectedGroup.name}
+                <span>📁 {selectedGroup.name}</span>
               </button>
             </>
           )}
@@ -562,6 +617,19 @@ function AppContent() {
                       value={groupDesc}
                       onChange={(e) => setGroupDesc(e.target.value)}
                     />
+                    <div className="privacy-toggle">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={groupPrivacy}
+                          onChange={(e) => setGroupPrivacy(e.target.checked)}
+                        />
+                        <span>🔒 Private Group</span>
+                      </label>
+                      <small className="muted">
+                        {groupPrivacy ? "Only invited members can join" : "Anyone with code can join"}
+                      </small>
+                    </div>
                     <button type="submit" disabled={loading}>Create</button>
                   </form>
                 </div>
@@ -637,16 +705,78 @@ function AppContent() {
                     .filter(g => g.name !== "__NETWORK_SHARE__" && g.inviteCode !== "NETWORK")
                     .map((g) => (
                       <div key={g.id} className="group-item">
-                        <div>
-                          <strong>{g.name}</strong>
+                        <div className="group-item-content">
+                          <div className="group-item-header">
+                            <strong>{g.name}</strong>
+                            <span className={`privacy-badge ${g.isPrivate ? 'private' : 'public'}`}>
+                              {g.isPrivate ? '🔒 Private' : '🌐 Public'}
+                            </span>
+                          </div>
                           <div className="small">{g.description || "No description"}</div>
-                          <div>Invite Code: <code>{g.inviteCode}</code></div>
+                          <div className="group-meta">
+                            <span>Invite Code: <code>{g.inviteCode}</code></span>
+                            <span>• {g.memberCount} member{g.memberCount !== 1 ? 's' : ''}</span>
+                            {g.isCreator && <span className="creator-badge">• Creator</span>}
+                          </div>
                         </div>
-                        <button onClick={() => selectGroup(g)}>Open →</button>
+                        <div className="group-item-actions">
+                          <button onClick={() => selectGroup(g)} className="btn-primary">Open →</button>
+                          {g.isCreator && (
+                            <>
+                              <button onClick={() => startEditGroup(g)} className="btn-secondary">✏️ Edit</button>
+                              <button onClick={() => deleteGroup(g.id, g.name)} className="btn-danger">🗑️ Delete</button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))
                 )}
               </div>
+
+              {/* EDIT GROUP MODAL */}
+              {editingGroup && (
+                <div className="modal-overlay" onClick={() => setEditingGroup(null)}>
+                  <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                    <h3>✏️ Edit Group</h3>
+                    <form onSubmit={updateGroup}>
+                      <input
+                        type="text"
+                        placeholder="Group Name"
+                        value={editGroupName}
+                        onChange={(e) => setEditGroupName(e.target.value)}
+                        required
+                      />
+                      <textarea
+                        placeholder="Description"
+                        value={editGroupDesc}
+                        onChange={(e) => setEditGroupDesc(e.target.value)}
+                        rows={3}
+                      />
+                      <div className="privacy-toggle">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={editGroupPrivacy}
+                            onChange={(e) => setEditGroupPrivacy(e.target.checked)}
+                          />
+                          <span>🔒 Private Group</span>
+                        </label>
+                        <small className="muted">
+                          {editGroupPrivacy ? "Only invited members can join" : "Anyone with code can join"}
+                        </small>
+                      </div>
+                      <div className="modal-actions">
+                        <button type="submit" disabled={loading} className="btn-primary">
+                          Save Changes
+                        </button>
+                        <button type="button" onClick={() => setEditingGroup(null)} className="btn-secondary">
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
