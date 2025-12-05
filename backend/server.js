@@ -42,7 +42,6 @@ if (NODE_ENV === 'development') {
     allowedHeaders: ['Content-Type', 'Authorization']
   }));
 } else {
-  
   app.use(cors({
     origin: function(origin, callback) {
       if (!origin) return callback(null, true);

@@ -323,6 +323,27 @@ function AppContent() {
     setEditGroupPrivacy(group.isPrivate !== false);
   };
 
+  const leaveGroup = async (groupId, groupName) => {
+    if (!window.confirm(`Leave group "${groupName}"? You will lose access to all files in this group.`)) {
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      await API.post(`/groups/${groupId}/leave`);
+      notify("Left group successfully");
+      if (selectedGroup?.id === groupId) {
+        setSelectedGroup(null);
+        setView("groups");
+      }
+      fetchGroups();
+      fetchStats();
+    } catch (err) {
+      notify(err.response?.data?.error || "Failed to leave group", "error");
+    }
+    setLoading(false);
+  };
+
   /** ======================
    *  FILE HANDLING
    ======================== */
@@ -721,11 +742,13 @@ function AppContent() {
                         </div>
                         <div className="group-item-actions">
                           <button onClick={() => selectGroup(g)} className="btn-primary">Open →</button>
-                          {g.isCreator && (
+                          {g.isCreator ? (
                             <>
                               <button onClick={() => startEditGroup(g)} className="btn-secondary">✏️ Edit</button>
                               <button onClick={() => deleteGroup(g.id, g.name)} className="btn-danger">🗑️ Delete</button>
                             </>
+                          ) : (
+                            <button onClick={() => leaveGroup(g.id, g.name)} className="btn-warning">🚪 Leave</button>
                           )}
                         </div>
                       </div>

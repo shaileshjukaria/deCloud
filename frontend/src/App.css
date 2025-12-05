@@ -1742,6 +1742,19 @@ input:focus-visible {
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 
+.btn-warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.btn-warning:hover {
+  background: #f59e0b;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
 .privacy-toggle {
   display: flex;
   flex-direction: column;
