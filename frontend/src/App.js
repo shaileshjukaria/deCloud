@@ -4,6 +4,7 @@ import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import CookieBanner from "./components/CookieBanner";
+import FileManager from "./components/FileManager";
 import "./App.css";
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -946,109 +947,16 @@ function AppContent() {
             </>
           )}
 
-          {/* FILES */}
+          {/* FILES - Enhanced with FileManager Component */}
           {view === "files" && selectedGroup && (
-            <>
-              {/* Special Header for Network Share */}
-              {(selectedGroup.name === "__NETWORK_SHARE__" || selectedGroup.inviteCode === "NETWORK") ? (
-                <div className="files-header network-share-header">
-                  <h2>🌐 Network Share</h2>
-                  <p className="muted">
-                    🔒 End-to-end encrypted • Share files instantly with {peers.length} device{peers.length !== 1 ? 's' : ''} on your network
-                  </p>
-                </div>
-              ) : (
-                <div className="files-header">
-                  <h2>📁 {selectedGroup.name}</h2>
-                  <p className="muted">🔒 All files encrypted • {selectedGroup.memberCount} members</p>
-                </div>
-              )}
-
-              {/* UPLOAD */}
-              <div className="upload-row">
-                <form onSubmit={uploadFileToGroup}>
-                  <input type="file" onChange={(e) => setUploadFile(e.target.files[0])} required />
-                  <input
-                    type="text"
-                    placeholder="Tags"
-                    value={tags}
-                    onChange={(e) => setTags(e.target.value)}
-                  />
-                  <button type="submit" disabled={loading || !uploadFile}>
-                    Upload
-                  </button>
-                </form>
-              </div>
-
-              {/* Connected devices for network share */}
-              {(selectedGroup.name === "__NETWORK_SHARE__" || selectedGroup.inviteCode === "NETWORK") && (
-                <div className="card glass-border" style={{ 
-                  marginBottom: "20px", 
-                  background: "#f0fdf4",
-                  borderColor: "#22c55e" 
-                }}>
-                  <h3 style={{ color: "#166534", marginBottom: "12px" }}>
-                    🌐 Connected Devices ({peers.length})
-                  </h3>
-                  {peers.length === 0 ? (
-                    <p style={{ color: "#166534", margin: 0 }}>
-                      No other devices online. Make sure other devices are running the app.
-                    </p>
-                  ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px" }}>
-                      {peers.map((p, i) => (
-                        <div key={i} style={{
-                          background: "white",
-                          padding: "12px",
-                          borderRadius: "8px",
-                          border: "1px solid #86efac"
-                        }}>
-                          <div style={{ fontWeight: "600", color: "#166534" }}>
-                            💻 {p.name}
-                          </div>
-                          <div style={{ fontSize: "12px", color: "#16a34a", marginTop: "4px" }}>
-                            {p.ip}
-                          </div>
-                          <div style={{ fontSize: "11px", color: "#4ade80", marginTop: "4px" }}>
-                            ● Online
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* FILE LIST */}
-              <div className="files-list">
-                {files.length === 0 ? (
-                  <p className="empty">No files yet.</p>
-                ) : (
-                  files.map((f) => (
-                    <div key={f._id} className="file-item">
-                      <div>
-                        <div>📄 {f.originalName}</div>
-                        <div className="file-meta">
-                          {formatSize(f.size)} • {f.owner?.username} • {formatDate(f.uploadedAt)}
-                        </div>
-                      </div>
-
-                      <div className="file-actions">
-                        <button onClick={() => downloadFile(f._id, f.originalName)}>
-                          Download
-                        </button>
-
-                        {f.owner?._id?.toString() === user.id && (
-                          <button className="danger" onClick={() => deleteFile(f._id)}>
-                            Delete
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </>
+            <FileManager
+              group={selectedGroup}
+              user={user}
+              API={API}
+              BASE_API={BASE_API}
+              onBack={() => setView("groups")}
+              notify={notify}
+            />
           )}
 
           {/* PEERS */}
