@@ -82,11 +82,27 @@ mongoose
     useNewUrlParser: true,
     useUnifiedTopology: true
   })
-  .then(() => console.log("✅ MongoDB Connected"))
+  .then(() => {
+    console.log("✅ MongoDB Connected");
+    console.log(`📊 Database: ${mongoose.connection.db.databaseName}`);
+  })
   .catch(err => {
     console.error("❌ MongoDB Error:", err);
     process.exit(1);
   });
+
+// Monitor database connection events
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.warn('MongoDB disconnected. Attempting to reconnect...');
+});
+
+mongoose.connection.on('reconnected', () => {
+  console.log('✅ MongoDB reconnected');
+});
 
 // ====================== ENHANCED SCHEMAS ======================
 const User = mongoose.model(
@@ -297,7 +313,7 @@ udpServer.on("message", async (msg, rinfo) => {
                     isOnline: true,
                     lastSeen: new Date()
                 },
-                { upsert: true }
+                { upsert: true, new: true }
             );
 
             // Broadcast to connected WebSocket clients
@@ -340,7 +356,7 @@ udpServer.bind(PEER_PORT, "0.0.0.0", () => {
                 Peer.findOneAndUpdate(
                     { peerId: key },
                     { isOnline: false },
-                    { upsert: false }
+                    { upsert: false, new: true }
                 ).catch(err => console.error("Peer update error:", err));
             }
         }
@@ -499,15 +515,23 @@ app.patch("/api/auth/settings", auth, async (req, res) => {
         const { theme, emailNotifications, storageAlerts } = req.body;
         const user = await User.findById(req.user.userId);
         
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        console.log(`[Settings] Updating user ${user.username}:`, { theme, emailNotifications, storageAlerts });
+        
         if (theme !== undefined) user.theme = theme;
         if (emailNotifications !== undefined) user.emailNotifications = emailNotifications;
         if (storageAlerts !== undefined) user.storageAlerts = storageAlerts;
         
-        await user.save();
-        res.json({ success: true, user });
+        const savedUser = await user.save();
+        console.log(`[Settings] User ${user.username} updated successfully`);
+        
+        res.json({ success: true, user: savedUser });
     } catch (err) {
         console.error('Settings update error:', err);
-        res.status(500).json({ error: 'Failed to update settings' });
+        res.status(500).json({ error: 'Failed to update settings: ' + err.message });
     }
 });
 
@@ -516,6 +540,8 @@ app.post("/api/groups/create", auth, async (req, res) => {
     try {
         const { name, description, isPrivate = true } = req.body;
         const encryptionKey = crypto.randomBytes(32).toString("hex");
+
+        console.log(`[Group] Creating group "${name}" for user ${req.user.userId}`);
 
         const group = await Group.create({
             name,
@@ -527,14 +553,20 @@ app.post("/api/groups/create", auth, async (req, res) => {
             members: [{ userId: req.user.userId, role: "admin" }]
         });
 
-        await User.findByIdAndUpdate(req.user.userId, {
+        const updatedUser = await User.findByIdAndUpdate(req.user.userId, {
             $addToSet: { groups: group._id }
-        });
+        }, { new: true });
+
+        if (!updatedUser) {
+            console.error(`[Group] Failed to update user ${req.user.userId} with group ${group._id}`);
+        } else {
+            console.log(`[Group] User ${req.user.userId} added to group ${group._id}`);
+        }
 
         res.json(group);
     } catch (err) {
         console.error("Create group error:", err);
-        res.status(500).json({ error: "Failed to create group" });
+        res.status(500).json({ error: "Failed to create group: " + err.message });
     }
 });
 
@@ -619,7 +651,7 @@ app.delete("/api/groups/:groupId/members/:userId", auth, async (req, res) => {
 
         await User.findByIdAndUpdate(req.params.userId, {
             $pull: { groups: req.params.groupId }
-        });
+        }, { new: true });
 
         res.json({ success: true });
     } catch (err) {
@@ -642,7 +674,7 @@ app.post("/api/groups/join", auth, async (req, res) => {
 
     await User.findByIdAndUpdate(req.user.userId, {
       $push: { groups: group._id }
-    });
+    }, { new: true });
 
     res.json(group);
   } catch (err) {
@@ -676,7 +708,7 @@ app.post("/api/groups/join-network", auth, async (req, res) => {
       
       await User.findByIdAndUpdate(req.user.userId, {
         $addToSet: { groups: networkGroup._id }
-      });
+      }, { new: true });
     }
 
     res.json({
@@ -747,7 +779,7 @@ app.delete("/api/groups/:id", auth, async (req, res) => {
       
       await User.findByIdAndUpdate(file.owner, {
         $inc: { storageUsed: -file.size }
-      });
+      }, { new: true });
     }
     
     await File.deleteMany({ group: req.params.id });
@@ -789,7 +821,7 @@ app.post("/api/groups/:id/leave", auth, async (req, res) => {
     
     await User.findByIdAndUpdate(req.user.userId, {
       $pull: { groups: req.params.id }
-    });
+    }, { new: true });
     
     await group.save();
     
@@ -801,7 +833,7 @@ app.post("/api/groups/:id/leave", auth, async (req, res) => {
         
         await User.findByIdAndUpdate(file.owner, {
           $inc: { storageUsed: -file.size }
-        });
+        }, { new: true });
       }
       await File.deleteMany({ group: req.params.id });
       await Folder.deleteMany({ group: req.params.id });
@@ -948,9 +980,16 @@ app.post("/api/files/upload", auth, upload.single("file"), async (req, res) => {
     // Generate preview
     const previewFilename = await generatePreview(filePath, req.file.mimetype);
 
-    await User.findByIdAndUpdate(req.user.userId, {
+    console.log(`[Upload] Updating storage for user ${req.user.userId}: +${req.file.size} bytes`);
+    const updatedUser = await User.findByIdAndUpdate(req.user.userId, {
       $inc: { storageUsed: req.file.size }
-    });
+    }, { new: true });
+
+    if (!updatedUser) {
+      console.error(`[Upload] Failed to update storage for user ${req.user.userId}`);
+    } else {
+      console.log(`[Upload] User ${req.user.userId} storage now: ${updatedUser.storageUsed} bytes`);
+    }
 
     const file = await File.create({
       filename: req.file.filename,
@@ -1089,7 +1128,7 @@ app.get("/api/files/download/:id", auth, async (req, res) => {
       decipher.final()
     ]);
 
-    await File.findByIdAndUpdate(file._id, { $inc: { downloads: 1 } });
+    await File.findByIdAndUpdate(file._id, { $inc: { downloads: 1 } }, { new: true });
 
     await TransferLog.create({
       fileId: file._id,
@@ -1125,9 +1164,16 @@ app.delete("/api/files/:id", auth, async (req, res) => {
       if (fs.existsSync(previewPath)) fs.unlinkSync(previewPath);
     }
 
-    await User.findByIdAndUpdate(req.user.userId, {
+    console.log(`[Delete] Updating storage for user ${req.user.userId}: -${file.size} bytes`);
+    const updatedUser = await User.findByIdAndUpdate(req.user.userId, {
       $inc: { storageUsed: -file.size }
-    });
+    }, { new: true });
+
+    if (!updatedUser) {
+      console.error(`[Delete] Failed to update storage for user ${req.user.userId}`);
+    } else {
+      console.log(`[Delete] User ${req.user.userId} storage now: ${updatedUser.storageUsed} bytes`);
+    }
 
     await File.findByIdAndDelete(req.params.id);
 
