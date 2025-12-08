@@ -75,7 +75,7 @@ export default function Navbar({
                   <span>👤</span> My Profile
                 </button>
 
-                <button 
+                <button
                   className="dropdown-item"
                   onClick={() => {
                     onSettingsClick();
@@ -83,10 +83,6 @@ export default function Navbar({
                   }}
                 >
                   <span>⚙️</span> Settings
-                </button>
-
-                <button className="dropdown-item" disabled>
-                  <span>📊</span> Storage: {((user?.storageUsed || 0) / (1024 * 1024)).toFixed(2)} MB
                 </button>
 
                 <button className="dropdown-item">

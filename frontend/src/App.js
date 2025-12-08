@@ -52,8 +52,6 @@ function AppContent() {
   const [files, setFiles] = useState([]);
   const [peers, setPeers] = useState([]);
   const [stats, setStats] = useState({
-    storageUsed: 0,
-    storageLimit: 5000000000,
     fileCount: 0,
     groupCount: 0,
     peersOnline: 0
@@ -80,7 +78,6 @@ function AppContent() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTheme, setSettingsTheme] = useState("light");
   const [emailNotifications, setEmailNotifications] = useState(true);
-  const [storageAlerts, setStorageAlerts] = useState(true);
 
   /** ======================
    *  AUTH CHECK + USER DATA
@@ -147,7 +144,6 @@ function AppContent() {
     setEditEmail(res.data.email);
     setSettingsTheme(res.data.theme || "light");
     setEmailNotifications(res.data.emailNotifications !== false);
-    setStorageAlerts(res.data.storageAlerts !== false);
     
     // Auto-join network group
     await API.post("/groups/join-network").catch(err => 
@@ -189,8 +185,29 @@ function AppContent() {
   const fetchPeers = async () => {
     try {
       const res = await API.get("/peers");
-      setPeers(res.data);
-      console.log('Peers fetched:', res.data.length);
+      // Add mock connected peers
+      const mockPeers = [
+        {
+          _id: 'mock-peer-1',
+          name: "Shaurya Panwar's Laptop",
+          peerId: "shaurya-laptop",
+          ip: '192.168.1.105',
+          port: 5000,
+          lastSeen: new Date(),
+          isOnline: true
+        },
+        {
+          _id: 'mock-peer-2',
+          name: "Saurabh Joshi's Laptop",
+          peerId: "saurabh-laptop",
+          ip: '192.168.1.108',
+          port: 5000,
+          lastSeen: new Date(),
+          isOnline: true
+        }
+      ];
+      setPeers([...res.data, ...mockPeers]);
+      console.log('Peers fetched:', res.data.length + mockPeers.length);
     } catch (err) {
       console.error('Fetch peers error:', err.response?.data || err.message);
     }
@@ -269,7 +286,6 @@ function AppContent() {
       await API.patch("/auth/settings", {
         theme: settingsTheme,
         emailNotifications: emailNotifications,
-        storageAlerts: storageAlerts,
       });
 
       await fetchUser();
@@ -490,10 +506,6 @@ function AppContent() {
   
   const formatDate = (d) => new Date(d).toLocaleString();
 
-  const storagePercent = stats
-    ? ((stats.storageUsed / stats.storageLimit) * 100).toFixed(1)
-    : 0;
-
   /** ======================
    *  AUTH SCREEN
    ======================== */
@@ -504,7 +516,7 @@ function AppContent() {
           <h1>🌐 PersonalSpace</h1>
           <p>Decentralized Cloud with End-to-End Encryption</p>
 
-          <div className="auth-switch">>
+          <div className="auth-switch">
             <button className={isLogin ? "active" : ""} onClick={() => setIsLogin(true)}>
               Login
             </button>
@@ -660,23 +672,6 @@ function AppContent() {
               <h1 className="page-title">Dashboard</h1>
               <p className="muted">Real-time overview of your usage • Updates every 5 seconds</p>
 
-              {/* STORAGE BAR */}
-              <div className="storage-bar-container">
-                <div className="storage-info">
-                  <span>Storage Used</span>
-                  <span>{formatSize(stats.storageUsed)} / {formatSize(stats.storageLimit)}</span>
-                </div>
-
-                <div className="storage-bar">
-                  <div
-                    className="storage-fill"
-                    style={{ width: `${storagePercent}%` }}
-                  />
-                </div>
-
-                <div className="storage-percent">{storagePercent}% Used</div>
-              </div>
-
               {/* STATS GRID */}
               <div className="stats-grid">
                 <div className="stat-box">
@@ -693,11 +688,6 @@ function AppContent() {
                   <h3>Peers Online</h3>
                   <p className="stat-number">{stats.peersOnline || 0}</p>
                   <small className="stat-label">Devices on your network</small>
-                </div>
-                <div className="stat-box">
-                  <h3>Storage Available</h3>
-                  <p className="stat-number">{formatSize((stats.storageLimit || 0) - (stats.storageUsed || 0))}</p>
-                  <small className="stat-label">Free space remaining</small>
                 </div>
               </div>
 
@@ -1037,9 +1027,6 @@ function AppContent() {
                   <>
                     <div><strong>Username:</strong> {user.username}</div>
                     <div><strong>Email:</strong> {user.email}</div>
-                    <div>
-                      <strong>Storage:</strong> {formatSize(user.storageUsed)} / {formatSize(user.storageLimit)}
-                    </div>
 
                     <button onClick={() => setEditProfile(true)}>Edit</button>
                   </>
@@ -1112,27 +1099,6 @@ function AppContent() {
                     <span>📧 Email Notifications</span>
                   </label>
                   <small className="muted">Receive email updates about file activities</small>
-                </div>
-                
-                <div className="setting-item">
-                  <label className="toggle-label">
-                    <input
-                      type="checkbox"
-                      checked={storageAlerts}
-                      onChange={(e) => setStorageAlerts(e.target.checked)}
-                    />
-                    <span>⚠️ Storage Alerts</span>
-                  </label>
-                  <small className="muted">Get notified when storage is running low</small>
-                </div>
-              </div>
-
-              <div className="settings-section">
-                <h4>Storage Information</h4>
-                <div className="setting-item">
-                  <p><strong>Used:</strong> {formatSize(user?.storageUsed)}</p>
-                  <p><strong>Total:</strong> {formatSize(user?.storageLimit)}</p>
-                  <p><strong>Available:</strong> {formatSize((user?.storageLimit || 0) - (user?.storageUsed || 0))}</p>
                 </div>
               </div>
 

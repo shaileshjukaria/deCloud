@@ -123,7 +123,7 @@ const FileManager = ({ group, user, API, BASE_API, onBack, notify }) => {
 
     try {
       await API.post('/files/upload', formData);
-      notify('File uploaded!');
+      notify('File uploaded successfully!');
       setUploadFile(null);
       setTags('');
       fetchFiles();

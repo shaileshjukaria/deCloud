@@ -361,6 +361,24 @@
   border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
+.distributed-badge {
+  color: #10b981;
+  font-weight: 700;
+  font-size: 11px;
+  display: inline-block;
+  margin-top: 4px;
+}
+
+.file-peers {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin: 8px 0;
+  padding: 6px 8px;
+  background: rgba(59, 130, 246, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(59, 130, 246, 0.1);
+}
+
 .file-actions {
   display: flex;
   gap: 8px;

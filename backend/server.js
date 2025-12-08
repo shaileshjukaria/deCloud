@@ -154,7 +154,7 @@ const Folder = mongoose.model(
     })
 );
 
-// ENHANCED: File schema with folder support and full-text search
+
 const File = mongoose.model(
     "File",
     new mongoose.Schema({
@@ -172,6 +172,17 @@ const File = mongoose.model(
         hasPreview: { type: Boolean, default: false },
         previewPath: String,
         textContent: String, // For full-text search
+        // Distributed storage fields
+        storedAt: [{
+            peerId: String,
+            peerName: String,
+            peerIp: String,
+            peerPort: Number,
+            storedDate: { type: Date, default: Date.now },
+            isAvailable: { type: Boolean, default: true }
+        }],
+        isDistributed: { type: Boolean, default: false },
+        replicationCount: { type: Number, default: 0 },
         uploadedAt: { type: Date, default: Date.now }
     })
 );
@@ -300,7 +311,7 @@ udpServer.on("message", async (msg, rinfo) => {
                 lastSeen: new Date()
             });
 
-            console.log(`📡 Discovered peer: ${data.name} at ${rinfo.address} (Network: ${peerNetwork})`);
+            console.log(`📡 Peer discovered: ${data.name} at ${rinfo.address}:${data.port} (Total: ${discoveredPeers.size} peers)`);
 
             await Peer.findOneAndUpdate(
                 { peerId: peerKey },
@@ -328,40 +339,49 @@ udpServer.on("error", (err) => {
     console.error("UDP server error:", err);
 });
 
-udpServer.bind(PEER_PORT, "0.0.0.0", () => {
-    udpServer.setBroadcast(true);
-    console.log(`🔍 Peer discovery active on UDP port ${PEER_PORT}`);
-    console.log(`📡 Broadcasting as: ${os.hostname()}`);
-    console.log(`🌐 Network ID: ${LOCAL_NETWORK}`);
+// Only start UDP server if peer discovery is enabled
+if (ENABLE_PEER_DISCOVERY) {
+    udpServer.bind(PEER_PORT, "0.0.0.0", () => {
+        udpServer.setBroadcast(true);
+        console.log(`🔍 Peer discovery active on UDP port ${PEER_PORT}`);
+        console.log(`📡 Broadcasting as: ${os.hostname()}`);
+        console.log(`🌐 Network ID: ${LOCAL_NETWORK}`);
+        console.log(`🏠 Local IP: ${LOCAL_IP}`);
 
-    setInterval(() => {
-        const msg = JSON.stringify({
-            type: "PEER_ANNOUNCE",
-            name: os.hostname(),
-            port: PORT
-        });
+        // Broadcast presence every 5 seconds
+        setInterval(() => {
+            const msg = JSON.stringify({
+                type: "PEER_ANNOUNCE",
+                name: os.hostname(),
+                port: PORT
+            });
 
-        udpServer.send(msg, PEER_PORT, "255.255.255.255", (err) => {
-            if (err) console.error("Broadcast error:", err);
-        });
-    }, 5000);
+            udpServer.send(msg, PEER_PORT, "255.255.255.255", (err) => {
+                if (err) console.error("Broadcast error:", err);
+                else console.log(`📡 Broadcasted presence (${discoveredPeers.size} peers known)`);
+            });
+        }, 5000);
 
-    setInterval(() => {
-        const now = Date.now();
-        for (const [key, peer] of discoveredPeers.entries()) {
-            if (now - peer.lastSeen.getTime() > 30000) {
-                console.log(`🔌 Peer offline: ${peer.name}`);
-                discoveredPeers.delete(key);
-                io.emit('peer:offline', key);
-                Peer.findOneAndUpdate(
-                    { peerId: key },
-                    { isOnline: false },
-                    { upsert: false, new: true }
-                ).catch(err => console.error("Peer update error:", err));
+        // Clean up offline peers every 30 seconds
+        setInterval(() => {
+            const now = Date.now();
+            for (const [key, peer] of discoveredPeers.entries()) {
+                if (now - peer.lastSeen.getTime() > 30000) {
+                    console.log(`🔌 Peer offline: ${peer.name}`);
+                    discoveredPeers.delete(key);
+                    io.emit('peer:offline', key);
+                    Peer.findOneAndUpdate(
+                        { peerId: key },
+                        { isOnline: false },
+                        { upsert: false, new: true }
+                    ).catch(err => console.error("Peer update error:", err));
+                }
             }
-        }
-    }, 30000);
-});
+        }, 30000);
+    });
+} else {
+    console.log("⚠️ Peer discovery is disabled (ENABLE_PEER_DISCOVERY=false)");
+}
 
 // ====================== AUTH MIDDLEWARE ======================
 function auth(req, res, next) {
@@ -433,6 +453,69 @@ async function generatePreview(filePath, mimeType) {
         console.error('Preview generation error:', err);
     }
     return null;
+}
+
+// ====================== NETWORK FILE SHARING ======================
+// Simplified approach: Files are stored locally and accessible via network
+// No peer-to-peer distribution needed - all devices access the same backend
+async function markFileForNetworkSharing(fileId, groupId) {
+    try {
+        const file = await File.findById(fileId);
+        if (!file) return { success: false, error: 'File not found' };
+        
+        // Mark file as available on this server's network
+        const serverInfo = {
+            peerId: LOCAL_IP + ':' + PORT,
+            peerName: os.hostname(),
+            peerIp: LOCAL_IP,
+            peerPort: PORT,
+            storedDate: new Date(),
+            isAvailable: true
+        };
+        
+        // Update file to indicate it's stored on this server
+        await File.findByIdAndUpdate(fileId, {
+            storedAt: [serverInfo],
+            isDistributed: false,
+            replicationCount: 1
+        });
+        
+        console.log(`📡 File ${file.originalName} available on network at ${LOCAL_IP}:${PORT}`);
+        
+        return {
+            success: true,
+            distributed: false,
+            storedAt: [serverInfo],
+            replicationCount: 1,
+            message: 'File available on local network'
+        };
+    } catch (err) {
+        console.error('Network sharing error:', err);
+        return {
+            success: false,
+            distributed: false,
+            storedAt: [],
+            error: err.message
+        };
+    }
+}
+
+// Retrieve file from local storage (simplified - no peer-to-peer needed)
+async function retrieveFileFromLocal(file) {
+    try {
+        const localFilePath = path.join(__dirname, "uploads", file.filename);
+        
+        // Check if file exists locally
+        if (fs.existsSync(localFilePath)) {
+            console.log('📁 File found in local storage');
+            return { success: true, source: 'local', filePath: localFilePath };
+        }
+        
+        return { success: false, error: 'File not found in storage' };
+    } catch (err) {
+        console.error('Retrieve file error:', err);
+        return { success: false, error: err.message };
+    }
 }
 
 // ====================== MULTER ======================
@@ -991,6 +1074,7 @@ app.post("/api/files/upload", auth, upload.single("file"), async (req, res) => {
       console.log(`[Upload] User ${req.user.userId} storage now: ${updatedUser.storageUsed} bytes`);
     }
 
+    // Create file record first
     const file = await File.create({
       filename: req.file.filename,
       originalName: req.file.originalname,
@@ -1004,8 +1088,20 @@ app.post("/api/files/upload", auth, upload.single("file"), async (req, res) => {
       tags: tags ? JSON.parse(tags) : [],
       textContent: textContent,
       hasPreview: !!previewFilename,
-      previewPath: previewFilename
+      previewPath: previewFilename,
+      storedAt: [{
+        peerId: LOCAL_IP + ':' + PORT,
+        peerName: os.hostname(),
+        peerIp: LOCAL_IP,
+        peerPort: PORT,
+        storedDate: new Date(),
+        isAvailable: true
+      }],
+      isDistributed: false,
+      replicationCount: 1
     });
+
+    console.log(`✅ File uploaded: ${file.originalName} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
     await TransferLog.create({
       fileId: file._id,
@@ -1020,7 +1116,10 @@ app.post("/api/files/upload", auth, upload.single("file"), async (req, res) => {
       uploader: req.user.userId
     });
 
-    res.json(file);
+    res.json({
+      ...file.toObject(),
+      message: 'File uploaded and available on network'
+    });
   } catch (err) {
     console.error("Upload error:", err);
     res.status(500).json({ error: "Upload failed: " + err.message });
@@ -1109,12 +1208,19 @@ app.get("/api/files/download/:id", auth, async (req, res) => {
       return res.status(403).json({ error: "Not authorized" });
     }
 
-    const filePath = path.join(__dirname, "uploads", file.filename);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "File not found on disk" });
+    // Retrieve file from local storage
+    const retrievalResult = await retrieveFileFromLocal(file);
+    
+    if (!retrievalResult.success) {
+      return res.status(404).json({ 
+        error: "File not available", 
+        details: retrievalResult.error
+      });
     }
 
-    const encryptedData = fs.readFileSync(filePath);
+    console.log(`📥 Serving file: ${file.originalName}`);
+
+    const encryptedData = fs.readFileSync(retrievalResult.filePath);
 
     const decipher = crypto.createDecipheriv(
       ENCRYPTION_ALGORITHM,
@@ -1371,14 +1477,17 @@ app.get("/api/groups/:id/messages", auth, async (req, res) => {
 
 // ====================== WEBSOCKET FOR CHAT ======================
 io.on('connection', (socket) => {
-    console.log('Client connected:', socket.id);
+    console.log('✅ Client connected:', socket.id);
 
     socket.on('join:group', async ({ groupId, userId }) => {
         try {
+            console.log(`👤 User ${userId} attempting to join group ${groupId}`);
             const permission = await checkGroupPermission(userId, groupId);
             if (permission.allowed) {
                 socket.join(`group-${groupId}`);
-                console.log(`User ${userId} joined group ${groupId}`);
+                console.log(`✅ User ${userId} joined group ${groupId} successfully`);
+            } else {
+                console.log(`❌ User ${userId} denied access to group ${groupId}`);
             }
         } catch (err) {
             console.error('Join group error:', err);
@@ -1387,12 +1496,18 @@ io.on('connection', (socket) => {
 
     socket.on('leave:group', ({ groupId }) => {
         socket.leave(`group-${groupId}`);
+        console.log(`👋 Socket ${socket.id} left group ${groupId}`);
     });
 
     socket.on('message:send', async ({ groupId, userId, message }) => {
         try {
+            console.log(`💬 Message from user ${userId} to group ${groupId}:`, message.substring(0, 50));
+            
             const permission = await checkGroupPermission(userId, groupId);
-            if (!permission.allowed) return;
+            if (!permission.allowed) {
+                console.log(`❌ User ${userId} not allowed to send message to group ${groupId}`);
+                return;
+            }
 
             const group = permission.group;
 
@@ -1420,24 +1535,100 @@ io.on('connection', (socket) => {
                 .populate('sender', 'username');
 
             // Broadcast decrypted message to group members
-            io.to(`group-${groupId}`).emit('message:received', {
+            const broadcastData = {
                 ...populatedMessage.toObject(),
                 message: message // Send decrypted to connected clients
-            });
+            };
+            
+            console.log(`📤 Broadcasting message to group-${groupId}`);
+            io.to(`group-${groupId}`).emit('message:received', broadcastData);
+            
         } catch (err) {
-            console.error('Send message error:', err);
+            console.error('❌ Send message error:', err);
+            socket.emit('message:error', { error: 'Failed to send message' });
         }
     });
 
     socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
+        console.log('❌ Client disconnected:', socket.id);
     });
 });
 
 // ====================== PEERS ======================
 app.get("/api/peers", auth, async (req, res) => {
     const peers = [...discoveredPeers.values()];
+    console.log(`[API] Peers requested - returning ${peers.length} peers`);
     res.json(peers);
+});
+
+// Debug endpoint for peer discovery status
+app.get("/api/peers/debug", auth, async (req, res) => {
+    const peers = [...discoveredPeers.values()];
+    res.json({
+        enabled: ENABLE_PEER_DISCOVERY,
+        peerPort: PEER_PORT,
+        localIp: LOCAL_IP,
+        localNetwork: LOCAL_NETWORK,
+        hostname: os.hostname(),
+        discoveredCount: peers.length,
+        peers: peers
+    });
+});
+
+// Get online peers for file distribution
+app.get("/api/peers/online", auth, async (req, res) => {
+    try {
+        const onlinePeers = [...discoveredPeers.values()].filter(p => p.isOnline !== false);
+        res.json({
+            count: onlinePeers.length,
+            peers: onlinePeers
+        });
+    } catch (err) {
+        console.error('Get online peers error:', err);
+        res.status(500).json({ error: 'Failed to fetch online peers' });
+    }
+});
+
+// Store file chunk on this peer (called by other peers)
+app.post("/api/peers/store-file", auth, upload.single("file"), async (req, res) => {
+    try {
+        const { fileId, originalName, encryptionIV, encryptionAuthTag, sourcePeerId } = req.body;
+        
+        if (!req.file) {
+            return res.status(400).json({ error: "No file received" });
+        }
+        
+        console.log(`📦 Storing file chunk for ${originalName} from peer ${sourcePeerId}`);
+        
+        res.json({
+            success: true,
+            peerId: LOCAL_IP + ':' + PORT,
+            peerName: os.hostname(),
+            filename: req.file.filename,
+            message: 'File stored successfully on peer'
+        });
+    } catch (err) {
+        console.error('Store file on peer error:', err);
+        res.status(500).json({ error: 'Failed to store file on peer' });
+    }
+});
+
+// Retrieve file chunk from this peer (called by other peers)
+app.get("/api/peers/retrieve-file/:filename", auth, async (req, res) => {
+    try {
+        const { filename } = req.params;
+        const filePath = path.join(__dirname, "uploads", filename);
+        
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: "File not found on this peer" });
+        }
+        
+        console.log(`📤 Sending file ${filename} to requesting peer`);
+        res.sendFile(filePath);
+    } catch (err) {
+        console.error('Retrieve file from peer error:', err);
+        res.status(500).json({ error: 'Failed to retrieve file from peer' });
+    }
 });
 
 app.post("/api/peers/connect", auth, async (req, res) => {

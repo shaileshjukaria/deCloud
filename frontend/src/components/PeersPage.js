@@ -21,9 +21,6 @@ export default function PeersPage({ peers = [], onRefresh }) {
                 <div className="peer-ip">{p.ip}:{p.port}</div>
               </div>
               <div className="peer-meta muted">Last seen: {new Date(p.lastSeen).toLocaleString()}</div>
-              <div className="peer-actions">
-                <button onClick={() => window.open(`http://${p.ip}:${p.port}`, "_blank")}>Open</button>
-              </div>
             </div>
           ))
         )}
