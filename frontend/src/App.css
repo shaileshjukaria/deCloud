@@ -3,6 +3,23 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  /* Hardware acceleration for better mobile performance */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Enable smooth scrolling with momentum on mobile */
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Optimize animations for mobile */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ==================== THEME VARIABLES ==================== */
@@ -176,13 +193,17 @@ html, body {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   color: var(--text-secondary);
   position: relative;
+  /* Hardware acceleration */
+  will-change: transform, background;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .auth-switch button.active {
   background: var(--gradient-primary);
   color: white;
   box-shadow: var(--shadow-md), var(--shadow-glow);
-  transform: scale(1.02);
+  transform: scale(1.02) translateZ(0);
 }
 
 .auth-card form {
@@ -201,6 +222,10 @@ html, body {
   background: var(--bg-secondary);
   color: var(--text-primary);
   font-weight: 500;
+  /* Hardware acceleration */
+  will-change: transform, border-color;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .auth-card input:focus {
@@ -208,7 +233,7 @@ html, body {
   border-color: var(--primary);
   background: var(--bg-primary);
   box-shadow: 0 0 0 4px rgba(132, 204, 22, 0.15);
-  transform: translateY(-1px);
+  transform: translateY(-1px) translateZ(0);
 }
 
 .auth-card button[type="submit"] {
@@ -221,14 +246,22 @@ html, body {
   font-size: 1.1rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
   box-shadow: var(--shadow-md), var(--shadow-glow);
   margin-top: 8px;
+  /* Hardware acceleration */
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .auth-card button[type="submit"]:hover {
-  transform: translateY(-3px);
+  transform: translateY(-3px) translateZ(0);
   box-shadow: var(--shadow-lg), 0 0 40px rgba(132, 204, 22, 0.5);
+}
+
+.auth-card button[type="submit"]:active {
+  transform: translateY(-1px) translateZ(0);
 }
 
 .auth-card button[type="submit"]:active {
@@ -450,6 +483,11 @@ html, body {
   padding: 40px;
   min-height: calc(100vh - 70px);
   background: var(--bg-secondary);
+  /* Page transition animation */
+  animation: fadeIn 0.3s ease-out;
+  /* Hardware acceleration */
+  will-change: opacity;
+  transform: translateZ(0);
 }
 
 .page-title {
@@ -479,9 +517,13 @@ html, body {
   padding: 32px;
   box-shadow: var(--shadow-md);
   border: 1px solid var(--border-light);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
   position: relative;
   overflow: hidden;
+  /* Hardware acceleration */
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .card::before {
@@ -494,16 +536,21 @@ html, body {
   background: var(--gradient-primary);
   opacity: 0;
   transition: opacity 0.3s ease;
+  transform: translateZ(0);
 }
 
 .card:hover {
   box-shadow: var(--shadow-lg), var(--shadow-glow);
-  transform: translateY(-4px);
+  transform: translateY(-4px) translateZ(0);
   border-color: var(--primary-light);
 }
 
 .card:hover::before {
   opacity: 1;
+}
+
+.card:active {
+  transform: translateY(-2px) translateZ(0);
 }
 
 /* ==================== STATS GRID ==================== */
@@ -520,9 +567,13 @@ html, body {
   padding: 36px;
   box-shadow: var(--shadow-md);
   border: 2px solid var(--border-light);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
   position: relative;
   overflow: hidden;
+  /* Hardware acceleration */
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .stat-box::before {
@@ -2044,24 +2095,29 @@ input:focus-visible {
   flex: 1;
 }
 
-@keyframes fadeIn {
+@keyframes slideUp {
   from {
+    transform: translateY(20px) translateZ(0);
     opacity: 0;
   }
   to {
+    transform: translateY(0) translateZ(0);
     opacity: 1;
   }
 }
 
-@keyframes slideUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+/* Global button optimization */
+button {
+  /* Hardware acceleration for all buttons */
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+button:active {
+  transform: scale(0.96) translateZ(0);
 }
 
 /* ==================== SETTINGS MODAL ==================== */
@@ -2278,6 +2334,134 @@ input:focus-visible {
 .quick-action-btn strong {
   display: block;
   color: var(--text-primary);
+}
+
+/* ==================== MOBILE OPTIMIZATIONS ==================== */
+@media (max-width: 768px) {
+  /* Reduce expensive animations on mobile */
+  .card, .stat-box, .quick-action-btn {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  
+  /* Simplify hover effects for touch devices */
+  .card:active, .stat-box:active {
+    transform: scale(0.98) translateZ(0);
+  }
+  
+  /* Reduce shadow complexity on mobile */
+  .card, .stat-box {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Optimize grid layouts for mobile */
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  /* Reduce padding on mobile */
+  .card, .stat-box {
+    padding: 20px;
+  }
+  
+  /* Faster transitions for mobile interactions */
+  button, input, select {
+    transition: all 0.2s ease;
+  }
+}
+
+/* ==================== SMOOTH ENTRANCE ANIMATIONS ==================== */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) translateZ(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(-20px) translateZ(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateZ(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateZ(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateZ(0);
+  }
+}
+
+/* Apply entrance animations */
+.card, .stat-box {
+  animation: fadeInUp 0.5s ease-out backwards;
+}
+
+.card:nth-child(1) { animation-delay: 0.1s; }
+.card:nth-child(2) { animation-delay: 0.2s; }
+.card:nth-child(3) { animation-delay: 0.3s; }
+.card:nth-child(4) { animation-delay: 0.4s; }
+
+.stat-box:nth-child(1) { animation-delay: 0.1s; }
+.stat-box:nth-child(2) { animation-delay: 0.15s; }
+.stat-box:nth-child(3) { animation-delay: 0.2s; }
+.stat-box:nth-child(4) { animation-delay: 0.25s; }
+
+/* Loading spinner animation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--border-color);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 20px auto;
+}
+
+/* Pulse animation for online indicators */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+.online-indicator {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.quick-action-btn strong {
   font-size: 15px;
   font-weight: 700;
   margin-bottom: 6px;

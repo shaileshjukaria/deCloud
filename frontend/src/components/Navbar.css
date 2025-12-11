@@ -51,4 +51,32 @@
   border: none;
   border-radius: 6px;
   color: white;
+  transition: transform 0.2s ease;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.logout-btn:active {
+  transform: scale(0.95) translateZ(0);
+}
+
+/* Mobile navbar optimizations */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 0 12px;
+    /* Hardware acceleration */
+    will-change: transform;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+  
+  .navbar-search {
+    min-width: 150px;
+    font-size: 14px;
+  }
+  
+  .app-title {
+    font-size: 18px;
+  }
 }
