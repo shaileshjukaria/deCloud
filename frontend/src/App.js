@@ -185,29 +185,8 @@ function AppContent() {
   const fetchPeers = async () => {
     try {
       const res = await API.get("/peers");
-      // Add mock connected peers
-      const mockPeers = [
-        {
-          _id: 'mock-peer-1',
-          name: "Shaurya Panwar's Laptop",
-          peerId: "shaurya-laptop",
-          ip: '192.168.1.105',
-          port: 5000,
-          lastSeen: new Date(),
-          isOnline: true
-        },
-        {
-          _id: 'mock-peer-2',
-          name: "Saurabh Joshi's Laptop",
-          peerId: "saurabh-laptop",
-          ip: '192.168.1.108',
-          port: 5000,
-          lastSeen: new Date(),
-          isOnline: true
-        }
-      ];
-      setPeers([...res.data, ...mockPeers]);
-      console.log('Peers fetched:', res.data.length + mockPeers.length);
+      setPeers(res.data);
+      console.log('Peers fetched:', res.data.length);
     } catch (err) {
       console.error('Fetch peers error:', err.response?.data || err.message);
     }
