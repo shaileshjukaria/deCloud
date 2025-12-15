@@ -1,5 +1,7 @@
 # 🌐 PersonalSpace - Decentralized Cloud Storage
 
+# ![MyDrive Homepage](https://github.com/subnub/myDrive/blob/master/github_images/homepage.png?raw=true)
+
 > A secure, peer-to-peer file sharing platform with end-to-end encryption for local networks.
 
 PersonalSpace is a **decentralized cloud storage platform** that enables secure file sharing across devices on the same local network. With automatic peer discovery, end-to-end encryption, and instant network-wide file sharing, PersonalSpace transforms your local network into a private cloud.
